@@ -8,6 +8,7 @@ import yaml
 
 from enterprise_rag import embedding
 from enterprise_rag.cli import main
+from enterprise_rag.evaluate import EVAL_SET_COLUMNS
 from enterprise_rag.index import COLLECTION, open_index
 from tests.fake_idl import FakeIDL
 from tests.fake_models import FakeEmbedder, FakeVLLM
@@ -122,9 +123,6 @@ class Asked:
         return [c["doc_id"] for c in self.output["retrieved"]]
 
 
-EVAL_SET_COLUMNS = ["question", "answer", "doc_ids", "department", "question_type", "keep"]
-
-
 class EvalRun:
     """`eval` 실행 결과 폴더: 지표 JSON, 실행별 기록 파일, config 사본."""
 
@@ -154,25 +152,32 @@ class Pipeline:
         assert main(["--config", str(self.config_path), "index"]) == 0
 
     def __call__(self, dept, question, acl_filter=True):
-        self.config["ask"]["acl_filter"] = acl_filter
-        write_config(self.config_path, self.config)
+        self._write_config(acl_filter=acl_filter)
         self.capsys.readouterr()
         code = main(["--config", str(self.config_path), "ask", "--dept", dept, question])
         captured = self.capsys.readouterr()
         return Asked(code, captured.out, captured.err)
 
-    def eval(self, rows, run_name, acl_filter=True, top_k=5):
-        """평가셋 CSV를 쓰고 `eval --run-name`을 실행해 실행 결과 폴더를 돌려준다."""
-        self.config["ask"]["acl_filter"] = acl_filter
-        self.config["ask"]["top_k"] = top_k
-        write_config(self.config_path, self.config)
+    def eval(self, rows, run_name, acl_filter=True, top_k=5, expect_code=0):
+        """평가셋 CSV를 쓰고 `eval --run-name`을 실행해 실행 결과 폴더를 돌려준다.
+
+        `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
+        """
+        self._write_config(acl_filter=acl_filter, top_k=top_k)
         with open(self.config["paths"]["eval_set"], "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=EVAL_SET_COLUMNS)
             writer.writeheader()
             writer.writerows(rows)
         args = ["--config", str(self.config_path), "eval", "--run-name", run_name]
-        assert main(args) == 0
+        code = main(args)
+        assert code == expect_code
+        if code != 0:
+            return code
         return EvalRun(Path(self.config["paths"]["runs"]) / run_name)
+
+    def _write_config(self, **ask):
+        self.config["ask"].update(ask)
+        write_config(self.config_path, self.config)
 
     def chunks(self, doc_id):
         """색인에 들어간 그 문서의 청크 내용, 청크 순서대로."""

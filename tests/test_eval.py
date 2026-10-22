@@ -23,6 +23,10 @@ def row(question, doc_ids, department, question_type, keep):
     }
 
 
+def retrieved_ids(record):
+    return [c["doc_id"] for c in record["retrieved"]]
+
+
 EVAL_SET = [
     row(Q1, "inca0001", "marketing", "단일 홉", "O"),
     row(Q2, "pmtb0001", "regulatory", "단일 홉", "O"),
@@ -63,10 +67,6 @@ def test_t04_out_of_permission_runs_get_not_found_and_refusal_accuracy_is_one(pi
     assert run.metrics["refusal_accuracy"] == 1.0
 
 
-def retrieved_ids(record):
-    return [c["doc_id"] for c in record["retrieved"]]
-
-
 def test_t05_single_answer_question_found_in_top_1_has_hit_rate_one(pipeline):
     run = pipeline.eval(EVAL_SET, "t05", acl_filter=True, top_k=1)
 
@@ -91,3 +91,14 @@ def test_t07_run_folder_has_config_copy_metrics_and_records(pipeline):
     assert run.config_copy.read_text() == pipeline.config_path.read_text()
     assert set(run.metrics) >= {"retrieval_leak_rate", "refusal_accuracy", "hit_rate"}
     assert len(run.records) == 9
+
+
+def test_extra_existing_run_name_is_refused_and_kept(pipeline, capsys):
+    first = pipeline.eval(EVAL_SET, "same")
+    before = (first.folder / "metrics.json").read_text()
+
+    code = pipeline.eval(EVAL_SET, "same", acl_filter=False, expect_code=2)
+
+    assert code == 2
+    assert "same" in capsys.readouterr().err
+    assert (first.folder / "metrics.json").read_text() == before

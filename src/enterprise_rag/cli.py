@@ -10,7 +10,7 @@ from enterprise_rag.ask import ask
 from enterprise_rag.collect import collect
 from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
-from enterprise_rag.evaluate import evaluate
+from enterprise_rag.evaluate import EvalError, evaluate
 from enterprise_rag.index import index
 
 COMMANDS = {
@@ -56,7 +56,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.command == "eval":
-        evaluate(load_config(args.config), args.config, args.run_name)
+        try:
+            evaluate(load_config(args.config), args.config, args.run_name)
+        except EvalError as e:
+            print(e, file=sys.stderr)
+            return 2
         return 0
 
     print(f"`{args.command}`은 아직 구현되지 않았다.", file=sys.stderr)

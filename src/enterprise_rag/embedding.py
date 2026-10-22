@@ -21,11 +21,11 @@ def load_embedder(config: dict[str, Any]) -> Embedder:
 
     같은 모델은 한 번만 불러온다. `eval`이 질문·부서마다 `ask`를 부르기 때문이다.
     """
-    return _load(config["embedding"]["model"])
+    return _load_sentence_transformer(config["embedding"]["model"])
 
 
 @cache
-def _load(model: str) -> "SentenceTransformerEmbedder":
+def _load_sentence_transformer(model: str) -> "SentenceTransformerEmbedder":
     return SentenceTransformerEmbedder(model)
 
 
