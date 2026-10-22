@@ -16,6 +16,7 @@ class Embedder(Protocol):
 
 
 def load_embedder(config: dict[str, Any]) -> Embedder:
+    """config의 임베딩 모델을 불러온다. 테스트는 이 함수를 가짜 임베딩으로 바꾼다."""
     return SentenceTransformerEmbedder(config["embedding"]["model"])
 
 

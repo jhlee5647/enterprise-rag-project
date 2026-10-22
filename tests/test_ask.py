@@ -21,7 +21,9 @@ def test_t02_acl_filter_excludes_other_department_documents_before_search(pipeli
     asked = pipeline("marketing", "PMTA submission timeline")
 
     assert "pmtb0001" not in asked.retrieved_ids
-    assert asked.retrieved_ids  # 다른 청크는 검색됐지만 근거가 되지 못했다
+    # 검색 전에 걸렀으므로 상위 k(5)개를 marketing이 볼 수 있는 청크로 다 채운다.
+    # 검색 후에 걸렀다면 B와 txtd0001(regulatory 전용)이 자리를 차지해 5개보다 적다.
+    assert len(asked.retrieved_ids) == 5
     assert asked.answer == NOT_FOUND
     assert asked.citations == []
 

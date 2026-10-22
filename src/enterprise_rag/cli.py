@@ -9,6 +9,7 @@ from pathlib import Path
 from enterprise_rag.ask import ask
 from enterprise_rag.collect import collect
 from enterprise_rag.config import load_config
+from enterprise_rag.departments import departments
 from enterprise_rag.index import index
 
 COMMANDS = {
@@ -40,10 +41,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "ask":
         config = load_config(args.config)
-        departments = list(dict.fromkeys(config["collect"]["departments"].values()))
-        if args.dept not in departments:
+        valid = departments(config["collect"]["departments"])
+        if args.dept not in valid:
             print(
-                f"알 수 없는 부서: {args.dept} (쓸 수 있는 부서: {', '.join(departments)})",
+                f"알 수 없는 부서: {args.dept} (쓸 수 있는 부서: {', '.join(valid)})",
                 file=sys.stderr,
             )
             return 2

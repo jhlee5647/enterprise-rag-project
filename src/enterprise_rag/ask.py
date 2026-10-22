@@ -29,10 +29,8 @@ def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any
         {"doc_id": c["doc_id"], "bates": c["bates"], "chunk": c["chunk"], "score": c["score"]}
         for c in chunks
     ]
-    if not chunks:
-        return {"answer": NOT_FOUND, "citations": [], "retrieved": retrieved}
-
-    answer = generate(config["llm"], question, chunks)
+    # 남은 청크가 없으면 LLM을 부르지 않는다. LLM이 찾지 못함 응답을 내면 인용 없이 그대로 돌려준다.
+    answer = generate(config["llm"], question, chunks) if chunks else NOT_FOUND
     if answer == NOT_FOUND:
         return {"answer": NOT_FOUND, "citations": [], "retrieved": retrieved}
     return {"answer": answer, "citations": citations(answer, chunks), "retrieved": retrieved}

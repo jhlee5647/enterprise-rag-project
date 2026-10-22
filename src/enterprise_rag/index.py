@@ -23,7 +23,7 @@ def index(config: dict[str, Any]) -> None:
     embedder = embedding.load_embedder(config)
     documents = pq.read_table(config["paths"]["documents"]).to_pylist()
 
-    points = []
+    payloads = []
     for doc in documents:
         for number, text in enumerate(
             chunk(doc["text"], embedder, cfg["chunk_size"], cfg["chunk_overlap"])
@@ -36,7 +36,7 @@ def index(config: dict[str, Any]) -> None:
                 "chunk": number,
                 "text": text,
             }
-            points.append(payload)
+            payloads.append(payload)
 
     with open_index(config["paths"]["index"]) as client:
         if client.collection_exists(COLLECTION):
@@ -45,8 +45,8 @@ def index(config: dict[str, Any]) -> None:
             COLLECTION,
             vectors_config=models.VectorParams(size=embedder.dim, distance=models.Distance.COSINE),
         )
-        for start in range(0, len(points), BATCH_SIZE):
-            batch = points[start : start + BATCH_SIZE]
+        for start in range(0, len(payloads), BATCH_SIZE):
+            batch = payloads[start : start + BATCH_SIZE]
             vectors = embedder.embed_documents([p["text"] for p in batch])
             client.upsert(
                 COLLECTION,
@@ -55,7 +55,7 @@ def index(config: dict[str, Any]) -> None:
                     for i, (v, p) in enumerate(zip(vectors, batch, strict=True))
                 ],
             )
-    log.info("문서 %d개, 청크 %d개를 색인했다", len(documents), len(points))
+    log.info("문서 %d개, 청크 %d개를 색인했다", len(documents), len(payloads))
 
 
 def chunk(text: str, embedder: embedding.Embedder, size: int, overlap: int) -> list[str]:
@@ -76,6 +76,7 @@ def chunk(text: str, embedder: embedding.Embedder, size: int, overlap: int) -> l
 
 @contextmanager
 def open_index(path: Path) -> Iterator[QdrantClient]:
+    """색인 폴더를 연다. 로컬 모드는 폴더를 잠그므로 쓰고 나면 바로 닫는다."""
     client = QdrantClient(path=str(path))
     try:
         yield client

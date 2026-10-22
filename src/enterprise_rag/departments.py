@@ -1,6 +1,11 @@
 """부서 매핑: 문서의 IDL 토픽을 연결표와 비교해 허용 부서를 계산한다."""
 
 
+def departments(mapping: dict[str, str]) -> list[str]:
+    """연결표에 있는 부서들. 연결표 순서대로, 같은 부서는 한 번만."""
+    return list(dict.fromkeys(mapping.values()))
+
+
 def allowed_departments(topic: str, mapping: dict[str, str]) -> list[str]:
     """`topic`(예: `Marketing;Youth Prevention;`)에서 연결표에 있는 토픽의 부서를 모은다.
 

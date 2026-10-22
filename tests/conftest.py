@@ -136,5 +136,4 @@ def pipeline(run_collect, tmp_path, monkeypatch, capsys):
             captured = capsys.readouterr()
             return Asked(code, captured.out, captured.err)
 
-        ask.vllm = vllm
         yield ask
