@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# 원문, 문서 표, 색인, PII 정답셋, 실행 결과 (git에 넣지 않는다)
+data/
+index/
+runs/

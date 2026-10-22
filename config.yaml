@@ -1,0 +1,22 @@
+# 경로와 파라미터를 모은 config. 상대 경로는 이 파일이 있는 폴더 기준이다.
+
+paths:
+  documents: data/documents.parquet   # 문서 표 (collect 결과)
+  sample_ids: data/sample_ids.txt     # 뽑힌 문서 ID 목록, 한 줄에 하나
+  collect_log: data/collect.log       # 수집 로그: 칸별 목표·수집·부족 수, 건너뛴 문서와 사유
+
+idl:
+  solr_url: https://metadata.idl.ucsf.edu/solr/ltdl3/query
+  s3_url: https://ucsf-idl-dataset.s3.amazonaws.com
+
+collect:
+  seed: 42          # Solr sort=random_<seed> asc
+  quota: 1000       # 칸(부서 × 문서 종류)마다 뽑을 문서 수
+  doc_types: [email, document, presentation]
+  # JUUL 밖에서 만든 외부 문서 종류. q에 NOT type:(...)으로 붙여 뺀다.
+  excluded_types: [publication, article, news, transcript, video, audio]
+  # 연결표: IDL 토픽 → 부서 (ADR-0001)
+  departments:
+    Marketing: marketing
+    Government & Public Affairs: regulatory
+    Product Design & Quality: product
