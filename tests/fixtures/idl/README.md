@@ -10,7 +10,7 @@
 | mkea0001 | email | `Marketing` | .ocr | 기본 경로, 인명 메타데이터(`Morgan, Kate`) |
 | mkea0002 | email | `Marketing;Youth Prevention;` | .ocr | 연결표에 없는 토픽 무시 |
 | mkea0003 | email | `Marketing` | .ocr | 할당량 초과 후보 |
-| shrm0001 | email | `Marketing;Government & Public Affairs;` | .ocr | 합집합, 두 칸 중복 |
+| shrm0001 | email | `Marketing; Government & Public Affairs` | .ocr | 합집합, 두 칸 중복 |
 | rega0001 | email | `Government & Public Affairs;` | .ocr | regulatory 기본 경로 |
 | txtd0001 | document | `Government & Public Affairs` | .txt만 | 본문 대체 경로 |
 | prdp0001 | presentation | `product design & quality;` | .ocr | 표기 섞임 |

@@ -32,7 +32,7 @@ def collect(config: dict[str, Any]) -> None:
     solr_url = config["idl"]["solr_url"]
     s3_url = config["idl"]["s3_url"].rstrip("/")
     rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    visited: set[str] = set()  # 이미 판정한 문서 ID. 뽑혔든 버려졌든 다른 칸에서 다시 보지 않는다.
 
     with httpx.Client(timeout=60) as client:
         for topic, department in cfg["departments"].items():
@@ -40,8 +40,9 @@ def collect(config: dict[str, Any]) -> None:
                 q = _cell_query(topic, doc_type, cfg["excluded_types"])
                 collected = 0
                 for doc in _candidates(client, solr_url, q, cfg["seed"]):
-                    if doc["id"] in seen:
+                    if doc["id"] in visited:
                         continue
+                    visited.add(doc["id"])
                     departments = allowed_departments(doc.get("topic", ""), cfg["departments"])
                     if not departments:
                         continue
@@ -52,24 +53,29 @@ def collect(config: dict[str, Any]) -> None:
                     rows.append(
                         {
                             "doc_id": doc["id"],
-                            "bates": doc["bates"],
-                            "title": doc["title"],
+                            "bates": doc.get("bates", ""),
+                            "title": doc.get("title", ""),
                             "doc_type": doc["type"],
                             "topic": doc["topic"],
                             "departments": departments,
                             "text": text,
                         }
                     )
-                    seen.add(doc["id"])
                     collected += 1
                     if collected == cfg["quota"]:
                         break
-                cell = f"{department}/{doc_type}"
-                if collected < cfg["quota"]:
-                    short = cfg["quota"] - collected
-                    log.warning(f"{cell}: 목표 {cfg['quota']}, 수집 {collected}, 부족 {short}")
+                quota, shortfall = cfg["quota"], cfg["quota"] - collected
+                if shortfall:
+                    log.warning(
+                        "%s/%s: 목표 %d, 수집 %d, 부족 %d",
+                        department,
+                        doc_type,
+                        quota,
+                        collected,
+                        shortfall,
+                    )
                 else:
-                    log.info(f"{cell}: 목표 {cfg['quota']}, 수집 {collected}")
+                    log.info("%s/%s: 목표 %d, 수집 %d", department, doc_type, quota, collected)
 
     _write(config["paths"], rows)
 
