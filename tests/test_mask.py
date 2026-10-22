@@ -36,3 +36,23 @@ def test_t03_citation_title_is_masked(pipeline):
 
     [citation] = [c for c in asked.citations if c["doc_id"] == "pnot0001"]
     assert citation["title"] == "Budget note from [NAME]"
+
+
+def test_t04_email_on_other_company_domain_is_masked(pipeline):
+    assert pipeline.chunks("jdoe0001") == ["Send it to [EMAIL]."]
+
+
+def test_t05_text_without_pii_is_unchanged(pipeline):
+    assert pipeline.chunks("fdar0001") == ["The FDA requested additional data."]
+
+
+def test_t06_pii_types_from_config_leave_names_unmasked(pipeline):
+    pipeline.index(pii_types=["EMAIL", "PHONE"])
+    asked = pipeline("marketing", QUESTION)
+
+    assert "pnot0001" in asked.retrieved_ids
+    [chunk] = pipeline.chunks("pnot0001")
+    assert "Kate Morgan" in chunk
+    assert "[EMAIL]" in chunk
+    assert "[PHONE]" in chunk
+    assert "[NAME]" not in chunk

@@ -22,22 +22,29 @@ TYPES = {
 
 
 class Masker:
-    def __init__(self, spacy_model: str):
+    def __init__(self, spacy_model: str, types: list[str]):
+        unknown = [t for t in types if t not in TYPES]
+        if unknown:
+            raise ValueError(f"알 수 없는 PII 종류: {unknown} (쓸 수 있는 종류: {list(TYPES)})")
         self._analyzer = _analyzer(spacy_model)
         self._anonymizer = AnonymizerEngine()
-        self._entities = [entity for entity, _ in TYPES.values()]
+        # PII 종류 목록에 있는 것만 찾는다. 목록이 비면 아무것도 바꾸지 않는다.
+        self._entities = [TYPES[t][0] for t in types]
         self._operators = {
             entity: OperatorConfig("replace", {"new_value": label})
             for entity, label in TYPES.values()
         }
 
     def mask(self, text: str) -> str:
+        if not self._entities:
+            return text
         found = self._analyzer.analyze(text, language="en", entities=self._entities)
         return self._anonymizer.anonymize(text, found, self._operators).text
 
 
 def load_masker(config: dict[str, Any]) -> Masker:
-    return Masker(config["pii"]["spacy_model"])
+    """config의 PII 종류 목록(`pii.types`)에 있는 종류만 가리는 마스커."""
+    return Masker(config["pii"]["spacy_model"], config["pii"]["types"])
 
 
 @cache
