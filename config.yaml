@@ -16,6 +16,9 @@ idl:
 collect:
   seed: 42          # Solr sort=random_<seed> asc
   quota: 1000       # 칸(부서 × 문서 종류)마다 뽑을 문서 수
+  # 본문 길이 한도(글자 수). 넘는 문서는 건너뛰고 수집 로그에 남긴다. 표 데이터가 통째로 든
+  # 1억 자짜리 문서가 있어서다. spaCy NER이 한 번에 받는 길이 한도(100만 자)와 맞춘다.
+  max_chars: 1000000
   doc_types: [email, document, presentation]
   # JUUL 밖에서 만든 외부 문서 종류. q에 NOT type:(...)으로 붙여 뺀다.
   excluded_types: [publication, article, news, transcript, video, audio]
