@@ -92,6 +92,12 @@ def citations(answer: str, chunks: list[dict[str, Any]]) -> list[dict[str, str]]
             continue
         c = chunks[n - 1]
         result.setdefault(
-            c["doc_id"], {"doc_id": c["doc_id"], "bates": c["bates"], "url": IDL_URL + c["doc_id"]}
+            c["doc_id"],
+            {
+                "doc_id": c["doc_id"],
+                "bates": c["bates"],
+                "url": IDL_URL + c["doc_id"],
+                "title": c["title"],
+            },
         )
     return list(result.values())

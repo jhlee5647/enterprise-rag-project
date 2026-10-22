@@ -20,3 +20,6 @@
 | inca0001 | document | `Marketing` | .ocr | 질의응답 문서 A (marketing 전용) |
 | pmtb0001 | document | `Government & Public Affairs` | .ocr | 질의응답 문서 B (regulatory 전용) |
 | agec0001 | document | `Marketing;Government & Public Affairs` | .ocr | 질의응답 문서 C (두 부서) |
+| pnot0001 | presentation | `Marketing` | .ocr | PII 마스킹 문서 P (제목·본문에 실명, 이메일, 전화번호) |
+| jdoe0001 | email | `Government & Public Affairs` | .ocr | `@juullabs.com` 이메일 마스킹 |
+| fdar0001 | document | `Product Design & Quality` | .ocr | PII 없는 본문은 그대로 (기관명 FDA) |

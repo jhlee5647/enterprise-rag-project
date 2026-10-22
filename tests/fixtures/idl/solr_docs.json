@@ -425,5 +425,92 @@
     "bates": "JLI00000503",
     "dateaddeducsf": "2024 June 27",
     "topic": "Marketing;Government & Public Affairs"
+  },
+  {
+    "id": "pnot0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "presentation",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Budget note from Kate Morgan",
+    "documentdate": "2018 September 04",
+    "type": [
+      "presentation"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000601",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Marketing"
+  },
+  {
+    "id": "jdoe0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "email",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Forwarding request",
+    "documentdate": "2018 September 04",
+    "type": [
+      "email"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000602",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Government & Public Affairs"
+  },
+  {
+    "id": "fdar0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "FDA data request",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000603",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Product Design & Quality"
   }
 ]
