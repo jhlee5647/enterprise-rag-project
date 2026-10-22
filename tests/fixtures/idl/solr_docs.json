@@ -338,5 +338,92 @@
     "custodian": [
       "Morgan, Kate"
     ]
+  },
+  {
+    "id": "inca0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Influencer campaign budget for 2018",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000501",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Marketing"
+  },
+  {
+    "id": "pmtb0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "PMTA submission timeline",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000502",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Government & Public Affairs"
+  },
+  {
+    "id": "agec0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Retail age verification policy",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000503",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Marketing;Government & Public Affairs"
   }
 ]
