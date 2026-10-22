@@ -1,0 +1,33 @@
+[project]
+name = "enterprise-rag"
+version = "0.1.0"
+description = "JUUL 사내 문서 RAG PoC"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "pyarrow>=17",
+    "pyyaml>=6",
+]
+
+[project.scripts]
+rag = "enterprise_rag.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
