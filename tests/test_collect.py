@@ -81,3 +81,31 @@ def test_short_cell_logs_shortfall(run_collect, caplog):
     assert collected.sample_ids == ["mkea0001"]
     messages = [r.getMessage() for r in caplog.records]
     assert "marketing/email: 목표 2, 수집 1, 부족 1" in messages
+
+
+def test_document_table_has_contract_columns_filled(run_collect):
+    collected = run_collect({MARKETING_EMAIL: ["mkea0002"]})
+
+    assert collected.by_id["mkea0002"] == {
+        "doc_id": "mkea0002",
+        "bates": "JLI00000102",
+        "title": "Age gating survey fieldwork update",
+        "doc_type": ["email"],
+        "topic": "Marketing;Youth Prevention;",
+        "departments": ["marketing"],
+        "text": (
+            "Subject: Age gating survey fieldwork update\n"
+            "Recruiting for the age gating survey is 60% complete.\nJLI00000102\n"
+        ),
+    }
+
+
+def test_person_metadata_is_not_stored(run_collect):
+    # mkea0001: 보관자 `Morgan, Kate`, 작성자 `Kate Morgan <kate.morgan@juul.com>`
+    collected = run_collect({MARKETING_EMAIL: ["mkea0001"]})
+
+    columns = set(collected.table.column_names)
+    assert not columns & {"custodian", "author", "recipient", "copied"}
+    row = repr(collected.by_id["mkea0001"])
+    assert "Morgan, Kate" not in row
+    assert "kate.morgan@juul.com" not in row

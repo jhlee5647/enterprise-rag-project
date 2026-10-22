@@ -12,6 +12,20 @@ from enterprise_rag.departments import allowed_departments
 
 log = logging.getLogger(__name__)
 
+# 문서 표: 수집과 색인 사이의 공식 계약. 한 행이 문서 하나다.
+# 보관자·작성자·수신자 같은 인명 메타데이터는 넣지 않는다.
+DOCUMENT_SCHEMA = pa.schema(
+    [
+        ("doc_id", pa.string()),
+        ("bates", pa.string()),
+        ("title", pa.string()),
+        ("doc_type", pa.list_(pa.string())),
+        ("topic", pa.string()),  # IDL 토픽, 받은 값 그대로
+        ("departments", pa.list_(pa.string())),  # 허용 부서
+        ("text", pa.string()),  # 본문, PII 마스킹 전
+    ]
+)
+
 
 def collect(config: dict[str, Any]) -> None:
     cfg = config["collect"]
@@ -35,7 +49,17 @@ def collect(config: dict[str, Any]) -> None:
                     if text is None:
                         log.warning("%s: 본문 파일(.ocr, .txt)이 없어 건너뛴다", doc["id"])
                         continue
-                    rows.append({"doc_id": doc["id"], "departments": departments, "text": text})
+                    rows.append(
+                        {
+                            "doc_id": doc["id"],
+                            "bates": doc["bates"],
+                            "title": doc["title"],
+                            "doc_type": doc["type"],
+                            "topic": doc["topic"],
+                            "departments": departments,
+                            "text": text,
+                        }
+                    )
                     seen.add(doc["id"])
                     collected += 1
                     if collected == cfg["quota"]:
@@ -82,5 +106,5 @@ def _body_url(s3_url: str, doc_id: str, ext: str) -> str:
 
 def _write(paths: dict[str, Path], rows: list[dict[str, Any]]) -> None:
     paths["documents"].parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(pa.Table.from_pylist(rows), paths["documents"])
+    pq.write_table(pa.Table.from_pylist(rows, schema=DOCUMENT_SCHEMA), paths["documents"])
     paths["sample_ids"].write_text("".join(r["doc_id"] + "\n" for r in rows))
