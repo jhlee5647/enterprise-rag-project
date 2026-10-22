@@ -15,6 +15,8 @@ dependencies = [
     "pyyaml>=6",
     "qdrant-client>=1.19.1",
     "ragas>=0.4.3",
+    # ragas 지식 그래프의 개체 겹침 관계(다중 홉 구체형 질문에 쓰임)가 필요로 하지만 ragas가 설치하지 않는다
+    "rapidfuzz>=3.14.6",
     "sentence-transformers>=6.2.0",
 ]
 

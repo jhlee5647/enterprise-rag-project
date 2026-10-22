@@ -125,6 +125,7 @@ def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dic
     테스트는 이 함수를 RAGAS 출력과 같은 모양의 가짜로 바꾼다.
     """
     # RAGAS는 무겁고 LangChain 경고를 많이 내서 쓸 때만 불러온다
+    import httpx
     from langchain_openai import ChatOpenAI
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
@@ -143,6 +144,11 @@ def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dic
             base_url=config["llm"]["base_url"],
             api_key="EMPTY",  # vLLM은 키를 보지 않는다
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            # RAGAS는 단계마다 새 이벤트 루프를 만든다. 이전 루프에서 연 연결을 다시 쓰면
+            # Connection error가 나므로 연결을 재사용하지 않는다(localhost라 비용이 작다).
+            http_async_client=httpx.AsyncClient(
+                limits=httpx.Limits(max_keepalive_connections=0), timeout=300
+            ),
         )
     )
     embeddings = LangchainEmbeddingsWrapper(_LangchainEmbeddings(embedding.load_embedder(config)))
