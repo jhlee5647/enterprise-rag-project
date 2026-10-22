@@ -512,5 +512,34 @@
     "bates": "JLI00000603",
     "dateaddeducsf": "2024 June 27",
     "topic": "Product Design & Quality"
+  },
+  {
+    "id": "crep0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "presentation",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Creator program results report",
+    "documentdate": "2018 September 04",
+    "type": [
+      "presentation"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000504",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Marketing"
   }
 ]
