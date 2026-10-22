@@ -35,3 +35,10 @@ def test_documents_without_allowed_departments_are_excluded_and_not_counted(run_
 
     assert collected.sample_ids == ["mkea0001", "mkea0003"]
     assert set(collected.by_id) == {"mkea0001", "mkea0003"}
+
+
+def test_cell_stops_at_quota(run_collect):
+    collected = run_collect({MARKETING_EMAIL: ["mkea0001", "mkea0002", "mkea0003"]}, quota=2)
+
+    assert collected.sample_ids == ["mkea0001", "mkea0002"]
+    assert "mkea0003" not in collected.by_id
