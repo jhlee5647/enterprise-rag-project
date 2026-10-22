@@ -17,3 +17,6 @@
 | flav0001 | document | `Flavors` | .ocr | 허용 부서 빔 |
 | notp0001 | document | (필드 없음) | .ocr | 허용 부서 빔 |
 | nobd0001 | presentation | `Marketing` | 없음 | 본문 없음 |
+| inca0001 | document | `Marketing` | .ocr | 질의응답 문서 A (marketing 전용) |
+| pmtb0001 | document | `Government & Public Affairs` | .ocr | 질의응답 문서 B (regulatory 전용) |
+| agec0001 | document | `Marketing;Government & Public Affairs` | .ocr | 질의응답 문서 C (두 부서) |
