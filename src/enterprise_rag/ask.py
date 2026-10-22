@@ -26,7 +26,13 @@ def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any
     cfg = config["ask"]
     chunks = rerank(cfg["reranker"], retrieve(config, department, question))
     retrieved = [
-        {"doc_id": c["doc_id"], "bates": c["bates"], "chunk": c["chunk"], "score": c["score"]}
+        {
+            "doc_id": c["doc_id"],
+            "bates": c["bates"],
+            "chunk": c["chunk"],
+            "departments": c["departments"],
+            "score": c["score"],
+        }
         for c in chunks
     ]
     # 남은 청크가 없으면 LLM을 부르지 않는다. LLM이 찾지 못함 응답을 내면 인용 없이 그대로 돌려준다.

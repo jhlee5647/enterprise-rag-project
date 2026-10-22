@@ -4,6 +4,7 @@
   토큰은 공백으로 나눈 단어 하나다.
 - 가짜 vLLM: OpenAI 호환 `/v1/chat/completions`를 흉내 낸다. 받은 근거 중 질문과 겹치는 단어가
   있는 근거가 있으면 그 근거 번호를 적어 답하고, 없으면 찾지 못함 응답 문구를 그대로 돌려준다.
+  `and`, `the` 같은 불용어는 겹치는 단어로 치지 않는다.
 """
 
 import json
@@ -14,10 +15,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 NOT_FOUND = "No relevant documents were found."
 WORD = re.compile(r"\w+")
+STOPWORDS = {"a", "an", "and", "the", "for", "of", "to", "in", "on", "with"}
 
 
 def words(text: str) -> set[str]:
-    return {w.casefold() for w in WORD.findall(text)}
+    return {w.casefold() for w in WORD.findall(text)} - STOPWORDS
 
 
 class FakeEmbedder:

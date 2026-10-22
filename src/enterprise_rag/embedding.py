@@ -1,5 +1,6 @@
 """임베딩 모델: 청킹에 쓸 토큰 위치와 임베딩을 준다. 앱 프로세스 안에서 실행한다."""
 
+from functools import cache
 from typing import Any, Protocol
 
 
@@ -16,8 +17,16 @@ class Embedder(Protocol):
 
 
 def load_embedder(config: dict[str, Any]) -> Embedder:
-    """config의 임베딩 모델을 불러온다. 테스트는 이 함수를 가짜 임베딩으로 바꾼다."""
-    return SentenceTransformerEmbedder(config["embedding"]["model"])
+    """config의 임베딩 모델을 불러온다. 테스트는 이 함수를 가짜 임베딩으로 바꾼다.
+
+    같은 모델은 한 번만 불러온다. `eval`이 질문·부서마다 `ask`를 부르기 때문이다.
+    """
+    return _load_sentence_transformer(config["embedding"]["model"])
+
+
+@cache
+def _load_sentence_transformer(model: str) -> "SentenceTransformerEmbedder":
+    return SentenceTransformerEmbedder(model)
 
 
 class SentenceTransformerEmbedder:
