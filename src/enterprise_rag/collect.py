@@ -1,6 +1,8 @@
 """표본 수집기: IDL Solr에서 표본을 뽑고 S3에서 본문을 받아 문서 표로 저장한다."""
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,27 @@ DOCUMENT_SCHEMA = pa.schema(
 
 
 def collect(config: dict[str, Any]) -> None:
+    """표본을 수집해 문서 표, 문서 ID 목록, 수집 로그를 저장한다."""
+    with _log_to_file(config["paths"]["collect_log"]):
+        _collect(config)
+
+
+@contextmanager
+def _log_to_file(path: Path) -> Iterator[None]:
+    """실행하는 동안 이 모듈의 로그를 파일에도 남긴다. 파일은 실행마다 새로 쓴다."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(path, mode="w", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    try:
+        yield
+    finally:
+        log.removeHandler(handler)
+        handler.close()
+
+
+def _collect(config: dict[str, Any]) -> None:
     cfg = config["collect"]
     solr_url = config["idl"]["solr_url"]
     s3_url = config["idl"]["s3_url"].rstrip("/")

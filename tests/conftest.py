@@ -9,11 +9,12 @@ from tests.fake_idl import FakeIDL
 class Collected:
     """`collect` 실행 결과: 문서 표의 행과 문서 ID 목록."""
 
-    def __init__(self, documents_path, sample_ids_path):
+    def __init__(self, documents_path, sample_ids_path, collect_log_path):
         self.table = pq.read_table(documents_path)
         self.rows = self.table.to_pylist()
         self.by_id = {r["doc_id"]: r for r in self.rows}
         self.sample_ids = sample_ids_path.read_text().split()
+        self.log_lines = collect_log_path.read_text().splitlines()
 
 
 @pytest.fixture
@@ -26,6 +27,7 @@ def run_collect(tmp_path):
             "paths": {
                 "documents": str(out_dir / "documents.parquet"),
                 "sample_ids": str(out_dir / "sample_ids.txt"),
+                "collect_log": str(out_dir / "collect.log"),
             },
             "collect": {
                 "seed": seed,
@@ -51,7 +53,9 @@ def run_collect(tmp_path):
             config_path = tmp_path / f"{out}.yaml"
             config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
             assert main(["--config", str(config_path), "collect"]) == 0
-        result = Collected(out_dir / "documents.parquet", out_dir / "sample_ids.txt")
+        result = Collected(
+            out_dir / "documents.parquet", out_dir / "sample_ids.txt", out_dir / "collect.log"
+        )
         result.solr_requests = idl.solr_requests
         return result
 

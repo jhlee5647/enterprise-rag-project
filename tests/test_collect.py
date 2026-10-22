@@ -133,3 +133,11 @@ def test_solr_query_puts_all_conditions_in_q_and_excludes_external_types(run_col
         "NOT type:(publication OR article OR news OR transcript OR video OR audio)"
     )
     assert "fq" not in collected.solr_requests[0]
+
+
+def test_collect_log_file_keeps_shortfall_and_skip_reasons(run_collect):
+    collected = run_collect({MARKETING_EMAIL: ["nobd0001", "mkea0001"]}, quota=2)
+
+    log = "\n".join(collected.log_lines)
+    assert "marketing/email: 목표 2, 수집 1, 부족 1" in log
+    assert "nobd0001" in log
