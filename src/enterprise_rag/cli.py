@@ -11,13 +11,14 @@ from enterprise_rag.collect import collect
 from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
 from enterprise_rag.evaluate import EvalError, evaluate
+from enterprise_rag.gen_eval import gen_eval
 from enterprise_rag.index import index
 
 COMMANDS = {
     "collect": "IDL에서 표본을 뽑아 본문을 받고 허용 부서를 계산해 문서 표로 저장한다",
     "index": "문서 표의 본문과 제목을 PII 마스킹하고 청크로 잘라 색인한다",
     "ask": "부서를 지정해 질문하고 출처가 붙은 답을 받는다",
-    "gen-eval": "평가셋 초안과 PII 정답셋 초안을 만든다 (미구현)",
+    "gen-eval": "부서마다 마스킹된 청크로 평가셋 초안(검수용 CSV)을 만든다",
     "eval": "검수된 평가셋으로 권한·검색 지표를 재고 실행 결과 폴더에 저장한다",
 }
 
@@ -55,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
         result = ask(config, args.dept, args.question)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "gen-eval":
+        gen_eval(load_config(args.config))
+        return 0
     if args.command == "eval":
         try:
             evaluate(load_config(args.config), args.config, args.run_name)
@@ -62,9 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             print(e, file=sys.stderr)
             return 2
         return 0
-
-    print(f"`{args.command}`은 아직 구현되지 않았다.", file=sys.stderr)
-    return 2
+    raise AssertionError(f"처리하지 않은 명령: {args.command}")
 
 
 if __name__ == "__main__":
