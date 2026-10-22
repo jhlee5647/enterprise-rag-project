@@ -24,14 +24,11 @@ def collect(config: dict[str, Any]) -> None:
             for doc_type in cfg["doc_types"]:
                 q = f'collectioncode:juul AND type:{doc_type} AND topic:"{topic}"'
                 for doc in _candidates(client, solr_url, q, cfg["seed"]):
+                    departments = allowed_departments(doc.get("topic", ""), cfg["departments"])
+                    if not departments:
+                        continue
                     text = client.get(_body_url(s3_url, doc["id"], "ocr")).text
-                    rows.append(
-                        {
-                            "doc_id": doc["id"],
-                            "departments": allowed_departments(doc["topic"], cfg["departments"]),
-                            "text": text,
-                        }
-                    )
+                    rows.append({"doc_id": doc["id"], "departments": departments, "text": text})
 
     _write(config["paths"], rows)
 

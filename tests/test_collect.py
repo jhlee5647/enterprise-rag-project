@@ -27,3 +27,11 @@ def test_topic_matching_ignores_case_and_trailing_separator(run_collect):
     collected = run_collect({("Product Design & Quality", "presentation"): ["prdp0001"]})
 
     assert collected.by_id["prdp0001"]["departments"] == ["product"]
+
+
+def test_documents_without_allowed_departments_are_excluded_and_not_counted(run_collect):
+    # flav0001: 토픽이 `Flavors`뿐, notp0001: `topic` 필드 없음. 할당량 2를 차지하지 않는다.
+    collected = run_collect({MARKETING_EMAIL: ["flav0001", "notp0001", "mkea0001", "mkea0003"]})
+
+    assert collected.sample_ids == ["mkea0001", "mkea0003"]
+    assert set(collected.by_id) == {"mkea0001", "mkea0003"}
