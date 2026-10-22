@@ -73,3 +73,11 @@ def test_document_without_body_is_skipped_and_logged(run_collect, caplog):
 
     assert collected.sample_ids == ["mkea0001", "mkea0003"]
     assert any("nobd0001" in r.getMessage() and "본문" in r.getMessage() for r in caplog.records)
+
+
+def test_short_cell_logs_shortfall(run_collect, caplog):
+    collected = run_collect({MARKETING_EMAIL: ["mkea0001"]}, quota=2)
+
+    assert collected.sample_ids == ["mkea0001"]
+    messages = [r.getMessage() for r in caplog.records]
+    assert "marketing/email: 목표 2, 수집 1, 부족 1" in messages

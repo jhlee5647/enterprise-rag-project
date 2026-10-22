@@ -21,7 +21,7 @@ def collect(config: dict[str, Any]) -> None:
     seen: set[str] = set()
 
     with httpx.Client(timeout=60) as client:
-        for topic in cfg["departments"]:
+        for topic, department in cfg["departments"].items():
             for doc_type in cfg["doc_types"]:
                 q = f'collectioncode:juul AND type:{doc_type} AND topic:"{topic}"'
                 collected = 0
@@ -40,6 +40,12 @@ def collect(config: dict[str, Any]) -> None:
                     collected += 1
                     if collected == cfg["quota"]:
                         break
+                cell = f"{department}/{doc_type}"
+                if collected < cfg["quota"]:
+                    short = cfg["quota"] - collected
+                    log.warning(f"{cell}: 목표 {cfg['quota']}, 수집 {collected}, 부족 {short}")
+                else:
+                    log.info(f"{cell}: 목표 {cfg['quota']}, 수집 {collected}")
 
     _write(config["paths"], rows)
 
