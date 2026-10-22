@@ -5,6 +5,8 @@ paths:
   sample_ids: data/sample_ids.txt     # 뽑힌 문서 ID 목록, 한 줄에 하나
   collect_log: data/collect.log       # 수집 로그: 칸별 목표·수집·부족 수, 건너뛴 문서와 사유
   index: data/index                   # 색인 (Qdrant 로컬 모드 폴더, index 결과)
+  eval_set: data/eval_set.csv        # 검수된 평가셋 (gen-eval이 쓰고 사람이 keep을 적은 CSV)
+  runs: runs                          # 실행 결과 폴더들. eval --run-name <이름>이면 runs/<이름>/
 
 idl:
   solr_url: https://metadata.idl.ucsf.edu/solr/ltdl3/query

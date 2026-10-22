@@ -1,3 +1,4 @@
+import csv
 import json
 from pathlib import Path
 
@@ -19,6 +20,8 @@ def make_config(out_dir, quota=2, seed=42):
             "sample_ids": str(out_dir / "sample_ids.txt"),
             "collect_log": str(out_dir / "collect.log"),
             "index": str(out_dir / "index"),
+            "eval_set": str(out_dir / "eval_set.csv"),
+            "runs": str(out_dir / "runs"),
         },
         "collect": {
             "seed": seed,
@@ -82,12 +85,12 @@ def run_collect(tmp_path):
     return run
 
 
-# 질의응답 fixture: 문서 A(inca0001), B(pmtb0001), C(agec0001), PII 마스킹 문서 P(pnot0001)와
-# 기존 문서 몇 개
+# 질의응답 fixture: 문서 A(inca0001), B(pmtb0001), C(agec0001), D(crep0001),
+# PII 마스킹 문서 P(pnot0001)와 기존 문서 몇 개
 PIPELINE_CELLS = {
     ("Marketing", "email"): ["mkea0002", "mkea0003"],
     ("Marketing", "document"): ["inca0001", "agec0001"],
-    ("Marketing", "presentation"): ["pnot0001"],
+    ("Marketing", "presentation"): ["pnot0001", "crep0001"],
     ("Government & Public Affairs", "email"): ["shrm0001", "jdoe0001"],
     ("Government & Public Affairs", "document"): ["pmtb0001", "txtd0001"],
     ("Product Design & Quality", "document"): ["fdar0001"],
@@ -119,6 +122,25 @@ class Asked:
         return [c["doc_id"] for c in self.output["retrieved"]]
 
 
+EVAL_SET_COLUMNS = ["question", "answer", "doc_ids", "department", "question_type", "keep"]
+
+
+class EvalRun:
+    """`eval` 실행 결과 폴더: 지표 JSON, 실행별 기록 파일, config 사본."""
+
+    def __init__(self, folder):
+        self.folder = folder
+        self.metrics = json.loads((folder / "metrics.json").read_text())
+        self.records = [json.loads(line) for line in (folder / "records.jsonl").open()]
+        self.config_copy = folder / "config.yaml"
+
+    def record(self, question, department):
+        [found] = [
+            r for r in self.records if r["question"] == question and r["department"] == department
+        ]
+        return found
+
+
 class Pipeline:
     """`collect`를 마친 config로 `index`와 `ask`를 실행한다. 부르면 `ask`를 실행한다."""
 
@@ -138,6 +160,19 @@ class Pipeline:
         code = main(["--config", str(self.config_path), "ask", "--dept", dept, question])
         captured = self.capsys.readouterr()
         return Asked(code, captured.out, captured.err)
+
+    def eval(self, rows, run_name, acl_filter=True, top_k=5):
+        """평가셋 CSV를 쓰고 `eval --run-name`을 실행해 실행 결과 폴더를 돌려준다."""
+        self.config["ask"]["acl_filter"] = acl_filter
+        self.config["ask"]["top_k"] = top_k
+        write_config(self.config_path, self.config)
+        with open(self.config["paths"]["eval_set"], "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=EVAL_SET_COLUMNS)
+            writer.writeheader()
+            writer.writerows(rows)
+        args = ["--config", str(self.config_path), "eval", "--run-name", run_name]
+        assert main(args) == 0
+        return EvalRun(Path(self.config["paths"]["runs"]) / run_name)
 
     def chunks(self, doc_id):
         """색인에 들어간 그 문서의 청크 내용, 청크 순서대로."""
