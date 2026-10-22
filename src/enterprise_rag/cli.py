@@ -26,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # 요청마다 찍히는 로그를 끈다
 
     if args.command == "collect":
         collect(load_config(args.config))
