@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pyarrow.parquet as pq
 import pytest
@@ -6,6 +7,7 @@ import yaml
 
 from enterprise_rag import embedding
 from enterprise_rag.cli import main
+from enterprise_rag.index import COLLECTION, open_index
 from tests.fake_idl import FakeIDL
 from tests.fake_models import FakeEmbedder, FakeVLLM
 
@@ -37,6 +39,7 @@ def make_config(out_dir, quota=2, seed=42):
             },
         },
         "index": {"chunk_size": 512, "chunk_overlap": 64},
+        "pii": {"types": ["NAME", "EMAIL", "PHONE"], "spacy_model": "en_core_web_lg"},
         "embedding": {"model": "fake-embedding"},
         "ask": {"acl_filter": True, "retrieval": "dense", "reranker": "none", "top_k": 5},
         "llm": {"model": "fake-llm", "base_url": "http://127.0.0.1:9/v1"},
@@ -79,12 +82,15 @@ def run_collect(tmp_path):
     return run
 
 
-# 질의응답 fixture: 문서 A(inca0001), B(pmtb0001), C(agec0001)와 기존 문서 몇 개
+# 질의응답 fixture: 문서 A(inca0001), B(pmtb0001), C(agec0001), PII 마스킹 문서 P(pnot0001)와
+# 기존 문서 몇 개
 PIPELINE_CELLS = {
     ("Marketing", "email"): ["mkea0002", "mkea0003"],
     ("Marketing", "document"): ["inca0001", "agec0001"],
-    ("Government & Public Affairs", "email"): ["shrm0001"],
+    ("Marketing", "presentation"): ["pnot0001"],
+    ("Government & Public Affairs", "email"): ["shrm0001", "jdoe0001"],
     ("Government & Public Affairs", "document"): ["pmtb0001", "txtd0001"],
+    ("Product Design & Quality", "document"): ["fdar0001"],
     ("Product Design & Quality", "presentation"): ["prdp0001"],
 }
 
@@ -113,27 +119,54 @@ class Asked:
         return [c["doc_id"] for c in self.output["retrieved"]]
 
 
+class Pipeline:
+    """`collect`를 마친 config로 `index`와 `ask`를 실행한다. 부르면 `ask`를 실행한다."""
+
+    def __init__(self, config_path, config, vllm, capsys):
+        self.config_path, self.config, self.vllm, self.capsys = config_path, config, vllm, capsys
+
+    def index(self, pii_types=None):
+        if pii_types is not None:
+            self.config["pii"]["types"] = pii_types
+        write_config(self.config_path, self.config)
+        assert main(["--config", str(self.config_path), "index"]) == 0
+
+    def __call__(self, dept, question, acl_filter=True):
+        self.config["ask"]["acl_filter"] = acl_filter
+        write_config(self.config_path, self.config)
+        self.capsys.readouterr()
+        code = main(["--config", str(self.config_path), "ask", "--dept", dept, question])
+        captured = self.capsys.readouterr()
+        return Asked(code, captured.out, captured.err)
+
+    def chunks(self, doc_id):
+        """색인에 들어간 그 문서의 청크 내용, 청크 순서대로."""
+        with open_index(Path(self.config["paths"]["index"])) as client:
+            points, _ = client.scroll(COLLECTION, limit=10_000)
+        found = sorted(
+            (p.payload for p in points if p.payload["doc_id"] == doc_id), key=lambda p: p["chunk"]
+        )
+        return [p["text"] for p in found]
+
+    @property
+    def prompts(self):
+        """가짜 LLM이 받은 프롬프트(메시지 내용을 이은 글), 받은 순서대로."""
+        return ["\n".join(m["content"] for m in r["messages"]) for r in self.vllm.requests]
+
+
 @pytest.fixture
 def pipeline(run_collect, tmp_path, monkeypatch, capsys):
-    """fixture로 `collect` → `index`를 실행하고, `ask`를 부르는 함수를 돌려준다.
+    """fixture로 `collect` → `index`를 실행하고, `ask`를 부르는 `Pipeline`을 돌려준다.
 
-    임베딩은 가짜로 바꾸고, LLM은 가짜 vLLM 서버로 보낸다.
+    임베딩은 가짜로 바꾸고, LLM은 가짜 vLLM 서버로 보낸다. NER은 실제 spaCy 모델을 쓴다.
     """
     monkeypatch.setattr(embedding, "load_embedder", lambda config: FakeEmbedder())
     run_collect(PIPELINE_CELLS, quota=2, out="out")
     config_path = tmp_path / "out.yaml"
     config = yaml.safe_load(config_path.read_text())
-    assert main(["--config", str(config_path), "index"]) == 0
 
     with FakeVLLM() as vllm:
         config["llm"]["base_url"] = vllm.base_url
-
-        def ask(dept, question, acl_filter=True):
-            config["ask"]["acl_filter"] = acl_filter
-            write_config(config_path, config)
-            capsys.readouterr()
-            code = main(["--config", str(config_path), "ask", "--dept", dept, question])
-            captured = capsys.readouterr()
-            return Asked(code, captured.out, captured.err)
-
-        yield ask
+        pipeline = Pipeline(config_path, config, vllm, capsys)
+        pipeline.index()
+        yield pipeline

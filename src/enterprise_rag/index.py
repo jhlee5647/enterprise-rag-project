@@ -1,4 +1,4 @@
-"""색인기: 문서 표의 본문을 청크로 잘라 임베딩하고 Qdrant(로컬 모드)에 저장한다."""
+"""색인기: 문서 표의 본문을 PII 마스킹하고 청크로 잘라 임베딩해 Qdrant(로컬 모드)에 저장한다."""
 
 import logging
 from collections.abc import Iterator
@@ -9,7 +9,7 @@ from typing import Any
 import pyarrow.parquet as pq
 from qdrant_client import QdrantClient, models
 
-from enterprise_rag import embedding
+from enterprise_rag import embedding, mask
 
 log = logging.getLogger(__name__)
 
@@ -21,18 +21,20 @@ def index(config: dict[str, Any]) -> None:
     """문서 표를 읽어 색인을 새로 만든다. 이전 색인은 지운다."""
     cfg = config["index"]
     embedder = embedding.load_embedder(config)
+    masker = mask.load_masker(config)
     documents = pq.read_table(config["paths"]["documents"]).to_pylist()
 
     payloads = []
     for doc in documents:
+        title = masker.mask(doc["title"])
         for number, text in enumerate(
-            chunk(doc["text"], embedder, cfg["chunk_size"], cfg["chunk_overlap"])
+            chunk(masker.mask(doc["text"]), embedder, cfg["chunk_size"], cfg["chunk_overlap"])
         ):
             payload = {
                 "departments": doc["departments"],
                 "doc_id": doc["doc_id"],
                 "bates": doc["bates"],
-                "title": doc["title"],
+                "title": title,
                 "chunk": number,
                 "text": text,
             }

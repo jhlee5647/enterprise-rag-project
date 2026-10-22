@@ -7,13 +7,14 @@
 NOT_FOUND = "No relevant documents were found."
 
 
-def test_t01_answer_cites_document_id_bates_and_idl_link(pipeline):
+def test_t01_answer_cites_document_id_bates_idl_link_and_title(pipeline):
     asked = pipeline("marketing", "influencer campaign budget")
 
     assert {
         "doc_id": "inca0001",
         "bates": "JLI00000501",
         "url": "https://www.industrydocuments.ucsf.edu/docs/inca0001",
+        "title": "Influencer campaign budget for 2018",
     } in asked.citations
 
 
