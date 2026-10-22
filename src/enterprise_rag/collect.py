@@ -18,6 +18,7 @@ def collect(config: dict[str, Any]) -> None:
     solr_url = config["idl"]["solr_url"]
     s3_url = config["idl"]["s3_url"].rstrip("/")
     rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
 
     with httpx.Client(timeout=60) as client:
         for topic in cfg["departments"]:
@@ -25,11 +26,14 @@ def collect(config: dict[str, Any]) -> None:
                 q = f'collectioncode:juul AND type:{doc_type} AND topic:"{topic}"'
                 collected = 0
                 for doc in _candidates(client, solr_url, q, cfg["seed"]):
+                    if doc["id"] in seen:
+                        continue
                     departments = allowed_departments(doc.get("topic", ""), cfg["departments"])
                     if not departments:
                         continue
                     text = client.get(_body_url(s3_url, doc["id"], "ocr")).text
                     rows.append({"doc_id": doc["id"], "departments": departments, "text": text})
+                    seen.add(doc["id"])
                     collected += 1
                     if collected == cfg["quota"]:
                         break

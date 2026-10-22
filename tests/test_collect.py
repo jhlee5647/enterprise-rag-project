@@ -42,3 +42,17 @@ def test_cell_stops_at_quota(run_collect):
 
     assert collected.sample_ids == ["mkea0001", "mkea0002"]
     assert "mkea0003" not in collected.by_id
+
+
+def test_document_picked_in_two_cells_is_stored_once(run_collect):
+    collected = run_collect(
+        {
+            MARKETING_EMAIL: ["shrm0001", "mkea0001"],
+            REGULATORY_EMAIL: ["shrm0001", "rega0001"],
+        }
+    )
+
+    assert collected.sample_ids.count("shrm0001") == 1
+    assert [r["doc_id"] for r in collected.rows].count("shrm0001") == 1
+    # 처음 뽑힌 칸(marketing × email)의 할당량에만 세므로 regulatory × email은 rega0001 하나다.
+    assert collected.sample_ids == ["shrm0001", "mkea0001", "rega0001"]
