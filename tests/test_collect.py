@@ -109,3 +109,27 @@ def test_person_metadata_is_not_stored(run_collect):
     row = repr(collected.by_id["mkea0001"])
     assert "Morgan, Kate" not in row
     assert "kate.morgan@juul.com" not in row
+
+
+def test_same_config_and_seed_give_same_sample(run_collect):
+    cells = {
+        MARKETING_EMAIL: ["mkea0001", "shrm0001", "mkea0003"],
+        REGULATORY_EMAIL: ["shrm0001", "rega0001"],
+        REGULATORY_DOCUMENT: ["txtd0001"],
+    }
+    first = run_collect(cells, seed=7, out="first")
+    second = run_collect(cells, seed=7, out="second")
+
+    assert first.sample_ids == second.sample_ids == ["mkea0001", "shrm0001", "rega0001", "txtd0001"]
+    assert {r["sort"] for r in first.solr_requests + second.solr_requests} == {"random_7 asc"}
+
+
+def test_solr_query_puts_all_conditions_in_q_and_excludes_external_types(run_collect):
+    collected = run_collect({MARKETING_EMAIL: ["mkea0001"]})
+
+    q = collected.solr_requests[0]["q"]
+    assert q == (
+        'collectioncode:juul AND type:email AND topic:"Marketing" AND '
+        "NOT type:(publication OR article OR news OR transcript OR video OR audio)"
+    )
+    assert "fq" not in collected.solr_requests[0]

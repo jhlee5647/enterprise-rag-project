@@ -37,7 +37,7 @@ def collect(config: dict[str, Any]) -> None:
     with httpx.Client(timeout=60) as client:
         for topic, department in cfg["departments"].items():
             for doc_type in cfg["doc_types"]:
-                q = f'collectioncode:juul AND type:{doc_type} AND topic:"{topic}"'
+                q = _cell_query(topic, doc_type, cfg["excluded_types"])
                 collected = 0
                 for doc in _candidates(client, solr_url, q, cfg["seed"]):
                     if doc["id"] in seen:
@@ -72,6 +72,12 @@ def collect(config: dict[str, Any]) -> None:
                     log.info(f"{cell}: 목표 {cfg['quota']}, 수집 {collected}")
 
     _write(config["paths"], rows)
+
+
+def _cell_query(topic: str, doc_type: str, excluded_types: list[str]) -> str:
+    """칸 하나의 Solr 검색 조건. IDL Solr는 `fq`를 제대로 적용하지 않아 모든 조건을 `q`에 넣는다."""
+    excluded = " OR ".join(excluded_types)
+    return f'collectioncode:juul AND type:{doc_type} AND topic:"{topic}" AND NOT type:({excluded})'
 
 
 def _candidates(client: httpx.Client, solr_url: str, q: str, seed: int):
