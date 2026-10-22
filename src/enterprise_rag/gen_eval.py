@@ -1,6 +1,7 @@
 """평가셋 생성기: 부서마다 그 부서 문서의 마스킹된 청크로 RAGAS 질문을 만들어 검수용 CSV로 쓴다.
 
 부서마다 따로 만들어 한 질문의 정답 문서가 모두 한 부서 안에 있게 한다(설계 기록 21번).
+함께 마스킹 전 원문 청크에 NER·정규식이 찾은 PII를 적은 PII 정답셋 초안 CSV도 쓴다(#7).
 """
 
 import csv
@@ -10,10 +11,17 @@ import re
 from pathlib import Path
 from typing import Any
 
-from enterprise_rag import embedding
+import pyarrow.parquet as pq
+
+from enterprise_rag import embedding, mask
 from enterprise_rag.departments import departments
-from enterprise_rag.evaluate import DOC_ID_SEPARATOR, EVAL_SET_COLUMNS
-from enterprise_rag.index import COLLECTION, department_filter, open_index
+from enterprise_rag.evaluate import (
+    DOC_ID_SEPARATOR,
+    EVAL_SET_COLUMNS,
+    PII_ANSWER_COLUMNS,
+    PII_SEPARATOR,
+)
+from enterprise_rag.index import COLLECTION, chunk, department_filter, open_index
 
 log = logging.getLogger(__name__)
 
@@ -35,11 +43,17 @@ HOP_PREFIX = re.compile(r"\A<\d+-hop>\n\n")
 def gen_eval(config: dict[str, Any]) -> Path:
     """부서마다 질문을 만들어 config의 평가셋 경로에 쓰고 그 경로를 돌려준다. `keep`은 비워 둔다.
 
-    평가셋 파일이 이미 있으면 사람이 적은 `keep`을 지우지 않도록 생성하기 전에 멈춘다.
+    PII 정답셋 초안도 config의 PII 정답셋 경로에 쓴다. 두 파일 중 하나라도 이미 있으면 사람이
+    고친 내용을 지우지 않도록 생성하기 전에 멈춘다.
     """
     path = config["paths"]["eval_set"]
     if path.exists():
         raise GenEvalError(f"평가셋 파일이 이미 있다: {path} (지우거나 옮긴 뒤 다시 실행한다)")
+    pii_path = config["paths"]["pii_answers"]
+    if pii_path.exists():
+        raise GenEvalError(
+            f"PII 정답셋 파일이 이미 있다: {pii_path} (지우거나 옮긴 뒤 다시 실행한다)"
+        )
     cfg = config["gen_eval"]
     rows = []
     for department in departments(config["collect"]["departments"]):
@@ -68,7 +82,44 @@ def gen_eval(config: dict[str, Any]) -> Path:
         writer.writeheader()
         writer.writerows(rows)
     log.info("질문 %d개를 %s에 썼다", len(rows), path)
+    write_pii_draft(config)
     return path
+
+
+def write_pii_draft(config: dict[str, Any]) -> None:
+    """문서 표의 원문을 청크로 잘라 시드로 청크 N개를 고르고, 찾은 PII를 적어 초안 CSV로 쓴다.
+
+    PII는 config의 PII 종류 목록과 상관없이 모든 종류를 찾는다. 정답셋은 마스킹 설정을 바꿔도
+    그대로 쓰는 자료이기 때문이다.
+    """
+    cfg = config["gen_eval"]
+    embedder = embedding.load_embedder(config)
+    finder = mask.Masker(config["pii"]["spacy_model"], list(mask.TYPES))
+    chunks = [
+        {"doc_id": doc["doc_id"], "chunk": number, "text": text}
+        for doc in pq.read_table(
+            config["paths"]["documents"], columns=["doc_id", "text"]
+        ).to_pylist()
+        for number, text in enumerate(
+            chunk(
+                doc["text"],
+                embedder,
+                config["index"]["chunk_size"],
+                config["index"]["chunk_overlap"],
+            )
+        )
+    ]
+    picked = random.Random(cfg["seed"]).sample(chunks, min(cfg["pii_chunks"], len(chunks)))
+    picked.sort(key=lambda c: (c["doc_id"], c["chunk"]))
+
+    path = config["paths"]["pii_answers"]
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=PII_ANSWER_COLUMNS)
+        writer.writeheader()
+        for c in picked:
+            pii = (f"{kind}: {value}" for kind, value in finder.find(c["text"]))
+            writer.writerow({**c, "pii": f"{PII_SEPARATOR} ".join(pii)})
+    log.info("원문 청크 %d개 중 %d개로 PII 정답셋 초안을 %s에 썼다", len(chunks), len(picked), path)
 
 
 def question_row(

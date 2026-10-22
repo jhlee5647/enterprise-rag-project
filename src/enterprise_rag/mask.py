@@ -46,6 +46,21 @@ class Masker:
         found = self._analyzer.analyze(text, language="en", entities=self._entities)
         return self._anonymizer.anonymize(text, found, self._operators).text
 
+    def find(self, text: str) -> list[tuple[str, str]]:
+        """`mask`가 가리는 PII를 (종류, 원래 값)으로 글 속 순서대로 돌려준다.
+
+        예: ("NAME", "Kate Morgan"), ("EMAIL", "kate.morgan@juul.com").
+
+        겹치는 것을 정리하는 방식이 `mask`와 같도록, 바꾸는 대신 그대로 두는(keep) 익명화를 돌려
+        실제로 가려질 부분만 얻는다.
+        """
+        if not self._entities:
+            return []
+        found = self._analyzer.analyze(text, language="en", entities=self._entities)
+        kept = self._anonymizer.anonymize(text, found, {"DEFAULT": OperatorConfig("keep")})
+        names = {t.entity: name for name, t in TYPES.items()}
+        return [(names[i.entity_type], i.text) for i in sorted(kept.items, key=lambda i: i.start)]
+
 
 def load_masker(config: dict[str, Any]) -> Masker:
     """config의 PII 종류 목록(`pii.types`)에 있는 종류만 가리는 마스커."""
