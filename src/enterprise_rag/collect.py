@@ -8,6 +8,8 @@ import httpx
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from enterprise_rag.departments import allowed_departments
+
 log = logging.getLogger(__name__)
 
 
@@ -18,7 +20,7 @@ def collect(config: dict[str, Any]) -> None:
     rows: list[dict[str, Any]] = []
 
     with httpx.Client(timeout=60) as client:
-        for topic, department in cfg["departments"].items():
+        for topic in cfg["departments"]:
             for doc_type in cfg["doc_types"]:
                 q = f'collectioncode:juul AND type:{doc_type} AND topic:"{topic}"'
                 for doc in _candidates(client, solr_url, q, cfg["seed"]):
@@ -26,7 +28,7 @@ def collect(config: dict[str, Any]) -> None:
                     rows.append(
                         {
                             "doc_id": doc["id"],
-                            "departments": [department],
+                            "departments": allowed_departments(doc["topic"], cfg["departments"]),
                             "text": text,
                         }
                     )

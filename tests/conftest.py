@@ -49,7 +49,7 @@ def run_collect(tmp_path):
         with FakeIDL(cells) as idl:
             config["idl"] = {"solr_url": idl.solr_url, "s3_url": idl.s3_url}
             config_path = tmp_path / f"{out}.yaml"
-            config_path.write_text(yaml.safe_dump(config, allow_unicode=True))
+            config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
             assert main(["--config", str(config_path), "collect"]) == 0
         result = Collected(out_dir / "documents.parquet", out_dir / "sample_ids.txt")
         result.solr_requests = idl.solr_requests

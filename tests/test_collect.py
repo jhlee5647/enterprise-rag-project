@@ -9,3 +9,9 @@ def test_marketing_email_is_allowed_to_marketing(run_collect):
     collected = run_collect({MARKETING_EMAIL: ["mkea0001"]})
 
     assert collected.by_id["mkea0001"]["departments"] == ["marketing"]
+
+
+def test_document_with_two_mapped_topics_is_allowed_to_both_departments(run_collect):
+    collected = run_collect({MARKETING_EMAIL: ["shrm0001"]})
+
+    assert collected.by_id["shrm0001"]["departments"] == ["marketing", "regulatory"]
