@@ -65,3 +65,11 @@ def test_body_falls_back_to_txt_when_ocr_is_missing(run_collect):
     assert collected.by_id["txtd0001"]["text"] == (
         "PMTA submission outline\n1. Product description\n2. Toxicology\nJLI00000203\n"
     )
+
+
+def test_document_without_body_is_skipped_and_logged(run_collect, caplog):
+    # nobd0001: S3에 .ocr도 .txt도 없다. 할당량을 차지하지 않고 수집은 계속된다.
+    collected = run_collect({MARKETING_EMAIL: ["nobd0001", "mkea0001", "mkea0003"]})
+
+    assert collected.sample_ids == ["mkea0001", "mkea0003"]
+    assert any("nobd0001" in r.getMessage() and "본문" in r.getMessage() for r in caplog.records)

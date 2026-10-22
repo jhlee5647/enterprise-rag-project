@@ -32,6 +32,9 @@ def collect(config: dict[str, Any]) -> None:
                     if not departments:
                         continue
                     text = _fetch_body(client, s3_url, doc["id"])
+                    if text is None:
+                        log.warning("%s: 본문 파일(.ocr, .txt)이 없어 건너뛴다", doc["id"])
+                        continue
                     rows.append({"doc_id": doc["id"], "departments": departments, "text": text})
                     seen.add(doc["id"])
                     collected += 1
