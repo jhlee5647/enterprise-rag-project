@@ -4,35 +4,13 @@
 문서 A는 inca0001, B는 pmtb0001, C는 agec0001, D는 crep0001이다.
 """
 
+from tests.eval_set import EVAL_SET, Q1, Q2, Q3
+
 NOT_FOUND = "No relevant documents were found."
-
-Q1 = "influencer campaign budget"
-Q2 = "PMTA submission timeline"
-Q3 = "influencer campaign budget and creator program results"
-Q4 = "age verification policy"
-
-
-def row(question, doc_ids, department, question_type, keep):
-    return {
-        "question": question,
-        "answer": "",
-        "doc_ids": doc_ids,
-        "department": department,
-        "question_type": question_type,
-        "keep": keep,
-    }
 
 
 def retrieved_ids(record):
     return [c["doc_id"] for c in record["retrieved"]]
-
-
-EVAL_SET = [
-    row(Q1, "inca0001", "marketing", "단일 홉", "O"),
-    row(Q2, "pmtb0001", "regulatory", "단일 홉", "O"),
-    row(Q3, "inca0001;crep0001", "marketing", "다중 홉 구체형", "O"),
-    row(Q4, "agec0001", "marketing", "단일 홉", "X"),
-]
 
 
 def test_t01_each_kept_question_runs_once_per_department(pipeline):

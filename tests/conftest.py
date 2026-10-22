@@ -8,7 +8,7 @@ import yaml
 
 from enterprise_rag import embedding
 from enterprise_rag.cli import main
-from enterprise_rag.evaluate import EVAL_SET_COLUMNS
+from enterprise_rag.evaluate import EVAL_SET_COLUMNS, PII_ANSWER_COLUMNS
 from enterprise_rag.index import COLLECTION, open_index
 from tests.fake_idl import FakeIDL
 from tests.fake_models import FakeEmbedder, FakeVLLM
@@ -23,6 +23,7 @@ def make_config(out_dir, quota=2, seed=42):
             "index": str(out_dir / "index"),
             "eval_set": str(out_dir / "eval_set.csv"),
             "runs": str(out_dir / "runs"),
+            "pii_answers": str(out_dir / "pii_answers.csv"),
         },
         "collect": {
             "seed": seed,
@@ -51,6 +52,7 @@ def make_config(out_dir, quota=2, seed=42):
             "seed": 42,
             "docs_per_department": 30,
             "questions_per_department": 15,
+            "pii_chunks": 50,
             "query_distribution": {
                 "single_hop": 0.5,
                 "multi_hop_specific": 0.25,
@@ -168,8 +170,9 @@ class Pipeline:
         captured = self.capsys.readouterr()
         return Asked(code, captured.out, captured.err)
 
-    def eval(self, rows, run_name, acl_filter=True, top_k=5, expect_code=0):
-        """평가셋 CSV를 쓰고 `eval --run-name`을 실행해 실행 결과 폴더를 돌려준다.
+    def eval(self, rows, run_name, acl_filter=True, top_k=5, expect_code=0, pii_answers=None):
+        """평가셋 CSV(와 `pii_answers`가 있으면 PII 정답셋 CSV)를 쓰고 `eval --run-name`을
+        실행해 실행 결과 폴더를 돌려준다.
 
         `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
         """
@@ -178,6 +181,11 @@ class Pipeline:
             writer = csv.DictWriter(f, fieldnames=EVAL_SET_COLUMNS)
             writer.writeheader()
             writer.writerows(rows)
+        if pii_answers is not None:
+            with open(self.config["paths"]["pii_answers"], "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=PII_ANSWER_COLUMNS)
+                writer.writeheader()
+                writer.writerows(pii_answers)
         args = ["--config", str(self.config_path), "eval", "--run-name", run_name]
         code = main(args)
         assert code == expect_code
@@ -199,6 +207,13 @@ class Pipeline:
         with open(self.config["paths"]["eval_set"], newline="") as f:
             reader = csv.DictReader(f)
             assert reader.fieldnames == EVAL_SET_COLUMNS
+            return list(reader)
+
+    def pii_draft(self):
+        """`gen-eval`이 쓴 PII 정답셋 초안 CSV의 행."""
+        with open(self.config["paths"]["pii_answers"], newline="") as f:
+            reader = csv.DictReader(f)
+            assert reader.fieldnames == PII_ANSWER_COLUMNS
             return list(reader)
 
     def documents(self):
@@ -225,18 +240,27 @@ class Pipeline:
 
 
 @pytest.fixture
-def pipeline(run_collect, tmp_path, monkeypatch, capsys):
-    """fixture로 `collect` → `index`를 실행하고, `ask`를 부르는 `Pipeline`을 돌려준다.
+def make_pipeline(run_collect, tmp_path, monkeypatch, capsys):
+    """fixture 칸으로 `collect` → `index`를 실행하고, `ask`를 부르는 `Pipeline`을 돌려준다.
 
     임베딩은 가짜로 바꾸고, LLM은 가짜 vLLM 서버로 보낸다. NER은 실제 spaCy 모델을 쓴다.
     """
     monkeypatch.setattr(embedding, "load_embedder", lambda config: FakeEmbedder())
-    run_collect(PIPELINE_CELLS, quota=2, out="out")
-    config_path = tmp_path / "out.yaml"
-    config = yaml.safe_load(config_path.read_text())
-
     with FakeVLLM() as vllm:
-        config["llm"]["base_url"] = vllm.base_url
-        pipeline = Pipeline(config_path, config, vllm, capsys)
-        pipeline.index()
-        yield pipeline
+
+        def make(cells):
+            run_collect(cells, quota=2, out="out")
+            config_path = tmp_path / "out.yaml"
+            config = yaml.safe_load(config_path.read_text())
+            config["llm"]["base_url"] = vllm.base_url
+            pipeline = Pipeline(config_path, config, vllm, capsys)
+            pipeline.index()
+            return pipeline
+
+        yield make
+
+
+@pytest.fixture
+def pipeline(make_pipeline):
+    """질의응답 fixture(`PIPELINE_CELLS`)로 만든 `Pipeline`."""
+    return make_pipeline(PIPELINE_CELLS)

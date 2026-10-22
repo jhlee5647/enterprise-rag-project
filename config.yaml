@@ -7,6 +7,7 @@ paths:
   index: data/index                   # 색인 (Qdrant 로컬 모드 폴더, index 결과)
   eval_set: data/eval_set.csv        # 검수된 평가셋 (gen-eval이 쓰고 사람이 keep을 적은 CSV)
   runs: runs                          # 실행 결과 폴더들. eval --run-name <이름>이면 runs/<이름>/
+  pii_answers: data/pii_answers.csv   # PII 정답셋 (gen-eval이 초안을 쓰고 사람이 PII 목록을 고친 CSV)
 
 idl:
   solr_url: https://metadata.idl.ucsf.edu/solr/ltdl3/query
@@ -50,6 +51,7 @@ gen_eval:
   seed: 42                      # 부서마다 생성에 쓸 문서를 고를 때 쓰는 시드
   docs_per_department: 30       # 부서마다 질문을 만들 문서 수. RAGAS가 이 문서들로 지식 그래프를 만든다
   questions_per_department: 15  # 부서마다 만들 질문 수
+  pii_chunks: 50                # PII 정답셋 초안에 넣을 원문 청크 수. 청크는 seed로 고른다
   query_distribution:           # 질문 유형 비율 (RAGAS query_distribution)
     single_hop: 0.5
     multi_hop_specific: 0.25
