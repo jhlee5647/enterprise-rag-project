@@ -27,7 +27,7 @@ index:
   chunk_overlap: 64   # 앞 청크와 겹치는 토큰 수
 
 pii:
-  types: [NAME, EMAIL, PHONE]   # PII 종류 목록: index가 고정 라벨([NAME] 등)로 가릴 종류
+  types: [NAME, EMAIL, PHONE]   # PII 종류 목록: index가 가명 토큰([NAME] 등)으로 가릴 종류
   spacy_model: en_core_web_lg   # 실명을 찾는 NER 모델 (Presidio가 쓰는 spaCy 영어 모델)
 
 embedding:
