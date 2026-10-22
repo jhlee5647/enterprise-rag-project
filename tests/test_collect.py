@@ -3,6 +3,7 @@
 MARKETING_EMAIL = ("Marketing", "email")
 MARKETING_DOCUMENT = ("Marketing", "document")
 REGULATORY_EMAIL = ("Government & Public Affairs", "email")
+REGULATORY_DOCUMENT = ("Government & Public Affairs", "document")
 
 
 def test_marketing_email_is_allowed_to_marketing(run_collect):
@@ -56,3 +57,11 @@ def test_document_picked_in_two_cells_is_stored_once(run_collect):
     assert [r["doc_id"] for r in collected.rows].count("shrm0001") == 1
     # 처음 뽑힌 칸(marketing × email)의 할당량에만 세므로 regulatory × email은 rega0001 하나다.
     assert collected.sample_ids == ["shrm0001", "mkea0001", "rega0001"]
+
+
+def test_body_falls_back_to_txt_when_ocr_is_missing(run_collect):
+    collected = run_collect({REGULATORY_DOCUMENT: ["txtd0001"]})
+
+    assert collected.by_id["txtd0001"]["text"] == (
+        "PMTA submission outline\n1. Product description\n2. Toxicology\nJLI00000203\n"
+    )

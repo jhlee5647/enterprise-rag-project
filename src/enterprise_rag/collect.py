@@ -31,7 +31,7 @@ def collect(config: dict[str, Any]) -> None:
                     departments = allowed_departments(doc.get("topic", ""), cfg["departments"])
                     if not departments:
                         continue
-                    text = client.get(_body_url(s3_url, doc["id"], "ocr")).text
+                    text = _fetch_body(client, s3_url, doc["id"])
                     rows.append({"doc_id": doc["id"], "departments": departments, "text": text})
                     seen.add(doc["id"])
                     collected += 1
@@ -53,6 +53,17 @@ def _candidates(client: httpx.Client, solr_url: str, q: str, seed: int):
         start += len(docs)
         if not docs or start >= body["numFound"]:
             return
+
+
+def _fetch_body(client: httpx.Client, s3_url: str, doc_id: str) -> str | None:
+    """`.ocr` 본문을 받고, 없으면 `.txt`를 받는다. 둘 다 없으면 None."""
+    for ext in ("ocr", "txt"):
+        response = client.get(_body_url(s3_url, doc_id, ext))
+        if response.status_code == 404:
+            continue
+        response.raise_for_status()
+        return response.text
+    return None
 
 
 def _body_url(s3_url: str, doc_id: str, ext: str) -> str:
