@@ -11,7 +11,7 @@ from enterprise_rag.collect import collect
 from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
 from enterprise_rag.evaluate import EvalError, evaluate
-from enterprise_rag.gen_eval import gen_eval
+from enterprise_rag.gen_eval import GenEvalError, gen_eval
 from enterprise_rag.index import index
 
 COMMANDS = {
@@ -57,7 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.command == "gen-eval":
-        gen_eval(load_config(args.config))
+        try:
+            gen_eval(load_config(args.config))
+        except GenEvalError as e:
+            print(e, file=sys.stderr)
+            return 2
         return 0
     if args.command == "eval":
         try:

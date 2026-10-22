@@ -185,11 +185,17 @@ class Pipeline:
             return code
         return EvalRun(Path(self.config["paths"]["runs"]) / run_name)
 
-    def gen_eval(self, **gen_eval):
-        """`gen-eval`을 실행하고 평가셋 CSV의 행을 돌려준다."""
+    def gen_eval(self, expect_code=0, **gen_eval):
+        """`gen-eval`을 실행하고 평가셋 CSV의 행을 돌려준다.
+
+        `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
+        """
         self.config["gen_eval"].update(gen_eval)
         write_config(self.config_path, self.config)
-        assert main(["--config", str(self.config_path), "gen-eval"]) == 0
+        code = main(["--config", str(self.config_path), "gen-eval"])
+        assert code == expect_code
+        if code != 0:
+            return code
         with open(self.config["paths"]["eval_set"], newline="") as f:
             reader = csv.DictReader(f)
             assert reader.fieldnames == EVAL_SET_COLUMNS

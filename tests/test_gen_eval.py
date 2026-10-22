@@ -138,3 +138,16 @@ def test_eval_reads_generated_csv_and_runs_only_rows_marked_keep(pipeline, ragas
 
     assert {r["question"] for r in run.records} == {rows[0]["question"], rows[4]["question"]}
     assert len(run.records) == 6
+
+
+def test_existing_eval_set_is_refused_and_kept(pipeline, ragas, capsys):
+    # 예: 사람이 keep을 적어 둔 검수본이 있는데 gen-eval을 다시 실행한 경우
+    path = pipeline.config["paths"]["eval_set"]
+    with open(path, "w") as f:
+        f.write("검수본")
+
+    code = pipeline.gen_eval(expect_code=2)
+
+    assert code == 2
+    assert "eval_set.csv" in capsys.readouterr().err
+    assert open(path).read() == "검수본"
