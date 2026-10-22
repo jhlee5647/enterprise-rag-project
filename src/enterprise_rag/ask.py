@@ -4,10 +4,9 @@ import re
 from typing import Any
 
 import httpx
-from qdrant_client import models
 
 from enterprise_rag import embedding
-from enterprise_rag.index import COLLECTION, open_index
+from enterprise_rag.index import COLLECTION, department_filter, open_index
 
 # 근거가 없을 때와 권한이 없을 때 똑같이 돌려주는 찾지 못함 응답
 NOT_FOUND = "No relevant documents were found."
@@ -48,13 +47,7 @@ def retrieve(config: dict[str, Any], department: str, question: str) -> list[dic
     if cfg["retrieval"] != "dense":
         raise ValueError(f"지원하지 않는 검색 방식: {cfg['retrieval']} (구현된 것: dense)")
     vector = embedding.load_embedder(config).embed_query(question)
-    acl = None
-    if cfg["acl_filter"]:
-        acl = models.Filter(
-            must=[
-                models.FieldCondition(key="departments", match=models.MatchValue(value=department))
-            ]
-        )
+    acl = department_filter(department) if cfg["acl_filter"] else None
     with open_index(config["paths"]["index"]) as client:
         points = client.query_points(
             COLLECTION, query=vector, query_filter=acl, limit=cfg["top_k"]

@@ -47,6 +47,16 @@ def make_config(out_dir, quota=2, seed=42):
         "embedding": {"model": "fake-embedding"},
         "ask": {"acl_filter": True, "retrieval": "dense", "reranker": "none", "top_k": 5},
         "llm": {"model": "fake-llm", "base_url": "http://127.0.0.1:9/v1"},
+        "gen_eval": {
+            "seed": 42,
+            "docs_per_department": 30,
+            "questions_per_department": 15,
+            "query_distribution": {
+                "single_hop": 0.5,
+                "multi_hop_specific": 0.25,
+                "multi_hop_abstract": 0.25,
+            },
+        },
     }
 
 
@@ -174,6 +184,26 @@ class Pipeline:
         if code != 0:
             return code
         return EvalRun(Path(self.config["paths"]["runs"]) / run_name)
+
+    def gen_eval(self, expect_code=0, **gen_eval):
+        """`gen-eval`을 실행하고 평가셋 CSV의 행을 돌려준다.
+
+        `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
+        """
+        self.config["gen_eval"].update(gen_eval)
+        write_config(self.config_path, self.config)
+        code = main(["--config", str(self.config_path), "gen-eval"])
+        assert code == expect_code
+        if code != 0:
+            return code
+        with open(self.config["paths"]["eval_set"], newline="") as f:
+            reader = csv.DictReader(f)
+            assert reader.fieldnames == EVAL_SET_COLUMNS
+            return list(reader)
+
+    def documents(self):
+        """문서 표의 행."""
+        return pq.read_table(self.config["paths"]["documents"]).to_pylist()
 
     def _write_config(self, **ask):
         self.config["ask"].update(ask)

@@ -45,3 +45,12 @@ ask:
 llm:
   model: Qwen/Qwen3-8B                 # vLLM에 띄운 모델 이름. thinking 모드는 요청마다 끈다
   base_url: http://localhost:8000/v1   # vLLM 서버 (OpenAI 호환 API)
+
+gen_eval:
+  seed: 42                      # 부서마다 생성에 쓸 문서를 고를 때 쓰는 시드
+  docs_per_department: 30       # 부서마다 질문을 만들 문서 수. RAGAS가 이 문서들로 지식 그래프를 만든다
+  questions_per_department: 15  # 부서마다 만들 질문 수
+  query_distribution:           # 질문 유형 비율 (RAGAS query_distribution)
+    single_hop: 0.5
+    multi_hop_specific: 0.25
+    multi_hop_abstract: 0.25

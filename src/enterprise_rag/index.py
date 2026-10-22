@@ -76,6 +76,13 @@ def chunk(text: str, embedder: embedding.Embedder, size: int, overlap: int) -> l
     return chunks
 
 
+def department_filter(department: str) -> models.Filter:
+    """허용 부서에 `department`가 들어 있는 청크만 남기는 Qdrant 필터."""
+    return models.Filter(
+        must=[models.FieldCondition(key="departments", match=models.MatchValue(value=department))]
+    )
+
+
 @contextmanager
 def open_index(path: Path) -> Iterator[QdrantClient]:
     """색인 폴더를 연다. 로컬 모드는 폴더를 잠그므로 쓰고 나면 바로 닫는다."""
