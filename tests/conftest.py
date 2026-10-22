@@ -31,7 +31,14 @@ def run_collect(tmp_path):
                 "seed": seed,
                 "quota": quota,
                 "doc_types": ["email", "document", "presentation"],
-                "excluded_types": ["publication", "article", "news", "transcript", "video", "audio"],
+                "excluded_types": [
+                    "publication",
+                    "article",
+                    "news",
+                    "transcript",
+                    "video",
+                    "audio",
+                ],
                 "departments": {
                     "Marketing": "marketing",
                     "Government & Public Affairs": "regulatory",

@@ -19,9 +19,7 @@ COMMANDS = {
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="rag", description="JUUL 사내 문서 RAG PoC")
-    parser.add_argument(
-        "--config", type=Path, default=Path("config.yaml"), help="config 파일 경로"
-    )
+    parser.add_argument("--config", type=Path, default=Path("config.yaml"), help="config 파일 경로")
     sub = parser.add_subparsers(dest="command", required=True)
     for name, help_text in COMMANDS.items():
         sub.add_parser(name, help=help_text)
