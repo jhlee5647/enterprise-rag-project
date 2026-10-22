@@ -15,3 +15,15 @@ def test_document_with_two_mapped_topics_is_allowed_to_both_departments(run_coll
     collected = run_collect({MARKETING_EMAIL: ["shrm0001"]})
 
     assert collected.by_id["shrm0001"]["departments"] == ["marketing", "regulatory"]
+
+
+def test_unmapped_topic_value_is_ignored(run_collect):
+    collected = run_collect({MARKETING_EMAIL: ["mkea0002"]})
+
+    assert collected.by_id["mkea0002"]["departments"] == ["marketing"]
+
+
+def test_topic_matching_ignores_case_and_trailing_separator(run_collect):
+    collected = run_collect({("Product Design & Quality", "presentation"): ["prdp0001"]})
+
+    assert collected.by_id["prdp0001"]["departments"] == ["product"]
