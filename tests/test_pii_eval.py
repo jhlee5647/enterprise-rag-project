@@ -8,7 +8,7 @@ NER은 실제 spaCy 모델을 쓴다.
 import pytest
 
 from enterprise_rag import gen_eval
-from tests.test_eval import EVAL_SET
+from tests.eval_set import EVAL_SET
 
 # 문서 표를 청크로 자르면 청크가 6개 나오는 fixture: 문서 6건, 문서마다 청크 하나.
 # 문서 P(pnot0001)가 들어 있다.

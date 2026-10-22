@@ -104,6 +104,8 @@ def load_eval_set(path: Path) -> list[dict[str, Any]]:
 
 def mask_pii_answers(config: dict[str, Any], answers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """PII 정답셋의 청크마다 원문을 지금의 PII 마스커로 마스킹해 지표 계산용 청크로 돌려준다."""
+    if not answers:
+        return []  # spaCy 모델을 불러오지 않는다
     masker = mask.load_masker(config)
     return [
         {
@@ -120,16 +122,26 @@ def load_pii_answers(path: Path) -> list[dict[str, Any]]:
     with open(path, newline="") as f:
         rows = list(csv.DictReader(f))
     for number, r in enumerate(rows, start=2):  # 1행은 머리글
-        pii = []
-        for item in r["pii"].split(PII_SEPARATOR):
-            if not item.strip():
-                continue
-            kind, sep, value = item.partition(":")
-            if not sep or kind.strip() not in mask.TYPES or not value.strip():
-                raise EvalError(
-                    f"PII 정답셋 {number}행의 PII를 읽을 수 없다: {item.strip()!r} "
-                    f"('종류: 값' 형식, 종류는 {', '.join(mask.TYPES)})"
-                )
-            pii.append((kind.strip(), value.strip()))
-        r["pii"] = pii
+        try:
+            r["pii"] = parse_pii(r["pii"])
+        except ValueError as e:
+            raise EvalError(f"PII 정답셋 {number}행의 PII를 읽을 수 없다: {e}") from None
     return rows
+
+
+def format_pii(pii: list[tuple[str, str]]) -> str:
+    """(종류, 값) 목록을 PII 정답셋 CSV의 `pii` 칸 글로 쓴다. 예: `NAME: Kate Morgan; EMAIL: …`"""
+    return f"{PII_SEPARATOR} ".join(f"{kind}: {value}" for kind, value in pii)
+
+
+def parse_pii(cell: str) -> list[tuple[str, str]]:
+    """`format_pii`의 반대. 종류가 없거나 형식이 틀린 항목이 있으면 ValueError."""
+    pii = []
+    for item in cell.split(PII_SEPARATOR):
+        if not item.strip():
+            continue
+        kind, sep, value = item.partition(":")
+        if not sep or kind.strip() not in mask.TYPES or not value.strip():
+            raise ValueError(f"{item.strip()!r} ('종류: 값' 형식, 종류는 {', '.join(mask.TYPES)})")
+        pii.append((kind.strip(), value.strip()))
+    return pii

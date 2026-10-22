@@ -25,6 +25,8 @@ TYPES = {
     "EMAIL": PiiType("EMAIL", "[EMAIL]"),
     "PHONE": PiiType("PHONE", "[PHONE]"),
 }
+# Presidio 개체 이름 → config의 PII 종류 이름
+NAMES = {t.entity: name for name, t in TYPES.items()}
 
 
 class Masker:
@@ -58,8 +60,7 @@ class Masker:
             return []
         found = self._analyzer.analyze(text, language="en", entities=self._entities)
         kept = self._anonymizer.anonymize(text, found, {"DEFAULT": OperatorConfig("keep")})
-        names = {t.entity: name for name, t in TYPES.items()}
-        return [(names[i.entity_type], i.text) for i in sorted(kept.items, key=lambda i: i.start)]
+        return [(NAMES[i.entity_type], i.text) for i in sorted(kept.items, key=lambda i: i.start)]
 
 
 def load_masker(config: dict[str, Any]) -> Masker:

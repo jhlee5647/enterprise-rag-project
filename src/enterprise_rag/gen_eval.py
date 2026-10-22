@@ -19,7 +19,7 @@ from enterprise_rag.evaluate import (
     DOC_ID_SEPARATOR,
     EVAL_SET_COLUMNS,
     PII_ANSWER_COLUMNS,
-    PII_SEPARATOR,
+    format_pii,
 )
 from enterprise_rag.index import COLLECTION, chunk, department_filter, open_index
 
@@ -117,8 +117,7 @@ def write_pii_draft(config: dict[str, Any]) -> None:
         writer = csv.DictWriter(f, fieldnames=PII_ANSWER_COLUMNS)
         writer.writeheader()
         for c in picked:
-            pii = (f"{kind}: {value}" for kind, value in finder.find(c["text"]))
-            writer.writerow({**c, "pii": f"{PII_SEPARATOR} ".join(pii)})
+            writer.writerow({**c, "pii": format_pii(finder.find(c["text"]))})
     log.info("원문 청크 %d개 중 %d개로 PII 정답셋 초안을 %s에 썼다", len(chunks), len(picked), path)
 
 
