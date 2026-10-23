@@ -17,11 +17,14 @@ from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
-# 마스커 버전: 마스커 규칙을 바꿀 때 올린다. 바뀌면 `index`가 저장된 마스킹 결과를 쓰지 않는다.
+# 마스커 버전: 마스킹 결과가 바뀔 수 있는 변경을 할 때 올린다. 바뀌면 `index`가 저장된 마스킹
+# 결과를 쓰지 않는다. 예: 정규식(EMAIL, PHONE, AUTHOR), 이름 후보 규칙, 불러올 spaCy 단계,
+# spaCy·Presidio 버전 올리기
 VERSION = 1
 
-# spaCy에서 불러올 단계. 이름 인식에는 `ner`과 그 입력인 `tok2vec`만 쓴다 (설계 기록 10)
-SPACY_PIPES = ["tok2vec", "ner"]
+# spaCy에서 불러올 단계. en_core_web_lg의 `ner`은 자기 안에 tok2vec을 따로 갖고 있어 공용
+# `tok2vec` 단계 없이도 결과가 같다(공용 `tok2vec`은 `tagger`, `parser`만 쓴다)
+SPACY_PIPES = ["ner"]
 # spaCy가 찾는 PERSON 외 개체. 가리지 않으므로 Presidio가 개체마다 찍는 경고를 끈다
 IGNORED_LABELS = [
     "CARDINAL", "DATE", "EVENT", "FAC", "GPE", "LANGUAGE", "LAW", "LOC", "MONEY",
@@ -69,9 +72,7 @@ NAMES = {t.entity: name for name, t in TYPES.items()}
 
 class Masker:
     def __init__(self, spacy_model: str, types: list[str]):
-        unknown = [t for t in types if t not in TYPES]
-        if unknown:
-            raise ValueError(f"알 수 없는 PII 종류: {unknown} (쓸 수 있는 종류: {list(TYPES)})")
+        check_types(types)
         self._analyzer = _analyzer(spacy_model)
         self._anonymizer = AnonymizerEngine()
         # PII 종류 목록에 있는 것만 찾는다. 목록이 비면 아무것도 바꾸지 않는다.
@@ -99,6 +100,13 @@ class Masker:
         found = self._analyzer.analyze(text, language="en", entities=self._entities)
         kept = self._anonymizer.anonymize(text, found, {"DEFAULT": OperatorConfig("keep")})
         return [(NAMES[i.entity_type], i.text) for i in sorted(kept.items, key=lambda i: i.start)]
+
+
+def check_types(types: list[str]) -> None:
+    """PII 종류 목록에 모르는 종류가 있으면 ValueError."""
+    unknown = [t for t in types if t not in TYPES]
+    if unknown:
+        raise ValueError(f"알 수 없는 PII 종류: {unknown} (쓸 수 있는 종류: {list(TYPES)})")
 
 
 def load_masker(config: dict[str, Any]) -> Masker:
@@ -152,12 +160,16 @@ def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
 
 
 class NerOnlyNlpEngine(SpacyNlpEngine):
-    """spaCy 모델에서 `SPACY_PIPES` 단계만 켜서 불러온다. GPU는 쓰지 않는다."""
+    """spaCy 모델에서 `SPACY_PIPES` 단계만 불러온다. 나머지 단계는 메모리에도 올리지 않는다.
+    Presidio의 원래 `load`가 하는 GPU 켜기와 모델 자동 내려받기는 하지 않는다.
+    """
 
     def load(self) -> None:
-        self.nlp = {
-            m["lang_code"]: spacy.load(m["model_name"], enable=SPACY_PIPES) for m in self.models
-        }
+        self.nlp = {}
+        for m in self.models:
+            name = m["model_name"]
+            unused = [c for c in spacy.info(name)["components"] if c not in SPACY_PIPES]
+            self.nlp[m["lang_code"]] = spacy.load(name, exclude=unused)
 
 
 @cache

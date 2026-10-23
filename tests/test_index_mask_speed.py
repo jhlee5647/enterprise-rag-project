@@ -123,3 +123,13 @@ def test_t08_no_unmapped_entity_warning_in_index_log(indexed, caplog):
 
     assert masked_again(messages)
     assert not any("is not mapped to a Presidio entity" in m for m in messages)
+
+
+def test_extra_unknown_pii_type_fails_before_starting_workers(indexed):
+    # 예: config에 PII 종류를 잘못 적은 경우. 작업 프로세스 안에서 실패하면 멈춰 기다릴 수 있다
+    indexed.config["pii"]["types"] = ["NAME", "SSN"]
+    indexed.config["pii"]["workers"] = 2
+    write_config(indexed.config_path, indexed.config)
+
+    with pytest.raises(ValueError, match="SSN"):
+        main(["--config", str(indexed.config_path), "index"])

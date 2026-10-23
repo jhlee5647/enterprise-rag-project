@@ -2,7 +2,7 @@
 
 마스킹은 작업 프로세스 여러 개로 나눠 하고, 결과를 마스킹 결과 파일에 저장해 다음 색인에서 다시
 쓴다. 다시 쓰는 조건은 문서 표 파일의 SHA-256, PII 종류 목록, spaCy 모델 이름, 마스커 버전이 모두
-같을 때다 (설계 기록 11).
+같을 때다 (`docs/design/issue8-followup.md` 11절).
 """
 
 import hashlib
@@ -10,6 +10,7 @@ import json
 import logging
 import multiprocessing
 from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -40,12 +41,14 @@ def index(config: dict[str, Any]) -> None:
     workers = config["pii"]["workers"]
     if not isinstance(workers, int) or workers < 1:
         raise IndexingError(f"pii.workers(마스킹 작업 프로세스 수)는 1 이상이어야 한다: {workers}")
+    # 작업 프로세스 안에서 실패하면 원인이 가려지므로, 띄우기 전에 여기서 알린다
+    mask.check_types(config["pii"]["types"])
     embedder = embedding.load_embedder(config)
     documents = pq.read_table(config["paths"]["documents"]).to_pylist()
-    masked = masked_documents(config, documents)
+    masked_pairs = masked_documents(config, documents)
 
     payloads = []
-    for doc, (title, body) in zip(documents, masked, strict=True):
+    for doc, (title, body) in zip(documents, masked_pairs, strict=True):
         for number, text in enumerate(
             chunk(body, embedder, cfg["chunk_size"], cfg["chunk_overlap"])
         ):
@@ -88,36 +91,46 @@ def masked_documents(
     """
     path = config["paths"]["masked"]
     conditions = masking_conditions(config)
+    doc_ids = [d["doc_id"] for d in documents]
     if path.exists():
         saved = pq.read_table(path)
         meta = saved.schema.metadata or {}
-        if json.loads(meta.get(CONDITIONS_KEY, b"null")) == conditions:
+        same = json.loads(meta.get(CONDITIONS_KEY, b"null")) == conditions
+        if same and saved["doc_id"].to_pylist() == doc_ids:
             log.info("저장된 마스킹 결과를 썼다: 문서 %d건 (%s)", saved.num_rows, path)
             return list(zip(saved["title"].to_pylist(), saved["text"].to_pylist(), strict=True))
 
     workers = config["pii"]["workers"]
     pairs = [(d["title"], d["text"]) for d in documents]
-    pii = config["pii"]
+    model, types = config["pii"]["spacy_model"], config["pii"]["types"]
     if workers == 1:
-        _start_worker(pii["spacy_model"], pii["types"])
-        masked = [_mask_pair(p) for p in pairs]
+        _start_worker(model, types)
+        masked_pairs = [_mask_pair(p) for p in pairs]
     else:
-        # 부모 프로세스가 불러 둔 임베딩 모델(GPU)을 물려받지 않도록 새로 띄운다
-        context = multiprocessing.get_context("spawn")
-        with context.Pool(
-            workers, initializer=_start_worker, initargs=(pii["spacy_model"], pii["types"])
+        # 부모 프로세스가 불러 둔 임베딩 모델(GPU)을 물려받지 않도록 새로 띄운다.
+        # 작업 프로세스가 시작하다 실패하면 멈춰 기다리지 않고 BrokenProcessPool로 끝난다.
+        with ProcessPoolExecutor(
+            workers,
+            mp_context=multiprocessing.get_context("spawn"),
+            initializer=_start_worker,
+            initargs=(model, types),
         ) as pool:
-            masked = pool.map(_mask_pair, pairs, chunksize=DOCS_PER_TASK)
+            masked_pairs = list(pool.map(_mask_pair, pairs, chunksize=DOCS_PER_TASK))
     table = pa.table(
         {
-            "doc_id": [d["doc_id"] for d in documents],
-            "title": [t for t, _ in masked],
-            "text": [b for _, b in masked],
+            "doc_id": doc_ids,
+            "title": [t for t, _ in masked_pairs],
+            "text": [b for _, b in masked_pairs],
         }
     )
-    pq.write_table(table.replace_schema_metadata({CONDITIONS_KEY: json.dumps(conditions)}), path)
-    log.info("문서 %d건을 마스킹했다 (작업 프로세스 %d개, %s에 저장)", len(masked), workers, path)
-    return masked
+    # 쓰다가 멈춰도 깨진 파일이 남지 않도록 옆에 쓴 뒤 이름을 바꾼다
+    partial = path.with_name(path.name + ".partial")
+    pq.write_table(table.replace_schema_metadata({CONDITIONS_KEY: json.dumps(conditions)}), partial)
+    partial.replace(path)
+    log.info(
+        "문서 %d건을 마스킹했다 (작업 프로세스 %d개, %s에 저장)", len(masked_pairs), workers, path
+    )
+    return masked_pairs
 
 
 def masking_conditions(config: dict[str, Any]) -> dict[str, Any]:
@@ -144,6 +157,7 @@ def _start_worker(spacy_model: str, types: list[str]) -> None:
 
 
 def _mask_pair(pair: tuple[str, str]) -> tuple[str, str]:
+    """(제목, 본문)을 이 프로세스의 마스커로 가린다."""
     title, text = pair
     return _masker.mask(title), _masker.mask(text)
 
