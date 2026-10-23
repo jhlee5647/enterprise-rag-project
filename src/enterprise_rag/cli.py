@@ -12,7 +12,7 @@ from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
 from enterprise_rag.evaluate import EvalError, evaluate
 from enterprise_rag.gen_eval import GenEvalError, extend_pii_answers, gen_eval, make_eval_set
-from enterprise_rag.index import IndexingError, index
+from enterprise_rag.index import IndexingError, IndexServerError, index
 
 COMMANDS = {
     "collect": "IDL에서 표본을 뽑아 본문을 받고 허용 부서를 계산해 문서 표로 저장한다",
@@ -49,6 +49,15 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)  # 요청마다 찍히는 로그를 끈다
 
+    try:
+        return run(args)
+    except IndexServerError as e:
+        print(e, file=sys.stderr)
+        return 2
+
+
+def run(args: argparse.Namespace) -> int:
+    """명령 하나를 실행하고 종료 코드를 돌려준다."""
     if args.command == "collect":
         collect(load_config(args.config))
         return 0

@@ -4,18 +4,18 @@
 임베딩은 가짜이고, 정밀도는 가짜 임베딩 모델을 불러올 때 받은 값으로 확인한다.
 """
 
-from pathlib import Path
-
 from enterprise_rag import index
 from enterprise_rag.cli import main
-from enterprise_rag.index import COLLECTION, open_index
+from enterprise_rag.index import open_index
 from tests.conftest import write_config
 
 
 def points(pipeline):
     """색인된 점마다 (ID, 부가 정보, 벡터), ID 순서대로."""
-    with open_index(Path(pipeline.config["paths"]["index"])) as client:
-        found, _ = client.scroll(COLLECTION, limit=10_000, with_vectors=True)
+    with open_index(pipeline.config["paths"]["index"]) as client:
+        found, _ = client.scroll(
+            pipeline.config["index"]["collection"], limit=10_000, with_vectors=True
+        )
     return sorted((p.id, p.payload, p.vector) for p in found)
 
 

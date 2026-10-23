@@ -18,12 +18,13 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 from qdrant_client import QdrantClient, models
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from enterprise_rag import embedding, mask
+from enterprise_rag.config import is_url
 
 log = logging.getLogger(__name__)
 
-COLLECTION = "chunks"
 # 이만큼씩 임베딩하고, 그 벡터를 `UPSERT_BATCH`개씩 저장한다. 저장하는 동안 GPU가 덜 쉬게 크게
 # 묶는다 (`docs/design/issue8-followup.md` 13절)
 EMBED_BATCH = 8192
@@ -38,6 +39,10 @@ class IndexingError(Exception):
     """색인을 시작할 수 없을 때. 메시지를 그대로 사용자에게 보여 준다."""
 
 
+class IndexServerError(Exception):
+    """색인 위치가 서버 주소인데 Qdrant 서버에 연결할 수 없을 때. 메시지를 그대로 보여 준다."""
+
+
 def index(config: dict[str, Any]) -> None:
     """문서 표를 읽어 색인을 새로 만든다. 이전 색인은 지운다."""
     cfg = config["index"]
@@ -50,6 +55,8 @@ def index(config: dict[str, Any]) -> None:
         embedding.check_dtype(config["embedding"]["dtype"])
     except ValueError as e:
         raise IndexingError(str(e)) from None
+    with open_index(config["paths"]["index"]):
+        pass  # 서버가 떠 있지 않으면 오래 걸리는 마스킹·임베딩 전에 멈춘다
     embedder = embedding.load_embedder(config)
     documents = pq.read_table(config["paths"]["documents"]).to_pylist()
     masked_pairs = masked_documents(config, documents)
@@ -69,11 +76,12 @@ def index(config: dict[str, Any]) -> None:
             }
             payloads.append(payload)
 
+    collection = config["index"]["collection"]
     with open_index(config["paths"]["index"]) as client:
-        if client.collection_exists(COLLECTION):
-            client.delete_collection(COLLECTION)
+        if client.collection_exists(collection):
+            client.delete_collection(collection)
         client.create_collection(
-            COLLECTION,
+            collection,
             vectors_config=models.VectorParams(size=embedder.dim, distance=models.Distance.COSINE),
         )
         for start in range(0, len(payloads), EMBED_BATCH):
@@ -84,7 +92,7 @@ def index(config: dict[str, Any]) -> None:
                 for i, (v, p) in enumerate(zip(vectors, batch, strict=True))
             ]
             for offset in range(0, len(points), UPSERT_BATCH):
-                client.upsert(COLLECTION, points[offset : offset + UPSERT_BATCH])
+                client.upsert(collection, points[offset : offset + UPSERT_BATCH])
     log.info("문서 %d개, 청크 %d개를 색인했다", len(documents), len(payloads))
 
 
@@ -192,9 +200,26 @@ def department_filter(department: str) -> models.Filter:
 
 
 @contextmanager
-def open_index(path: Path) -> Iterator[QdrantClient]:
-    """색인 폴더를 연다. 로컬 모드는 폴더를 잠그므로 쓰고 나면 바로 닫는다."""
-    client = QdrantClient(path=str(path))
+def open_index(location: str | Path) -> Iterator[QdrantClient]:
+    """색인을 연다. `http://`, `https://`로 시작하면 Qdrant 서버에 붙고, 아니면 폴더를 로컬 모드로
+    연다. 로컬 모드는 폴더를 잠그므로 쓰고 나면 바로 닫는다.
+
+    서버에 연결할 수 없으면 서버 주소와 띄우는 방법을 담아 `IndexServerError`.
+    """
+    if is_url(location):
+        # 서버 버전은 scripts/qdrant-server.sh가 클라이언트와 같은 마이너 버전으로 고정한다.
+        # 버전 확인을 켜 두면 서버가 없을 때 안내 메시지 앞에 경고가 한 번 더 찍힌다
+        client = QdrantClient(url=str(location), check_compatibility=False)
+        try:
+            client.get_collections()
+        except (ResponseHandlingException, UnexpectedResponse) as e:
+            client.close()
+            raise IndexServerError(
+                f"Qdrant 서버에 연결할 수 없다: {location} ({e})\n"
+                f"Pod 안에서 서버를 띄운다: scripts/qdrant-server.sh start"
+            ) from None
+    else:
+        client = QdrantClient(path=str(location))
     try:
         yield client
     finally:

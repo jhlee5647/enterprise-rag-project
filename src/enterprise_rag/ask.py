@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from enterprise_rag import embedding
-from enterprise_rag.index import COLLECTION, department_filter, open_index
+from enterprise_rag.index import department_filter, open_index
 
 # 근거가 없을 때와 권한이 없을 때 똑같이 돌려주는 찾지 못함 응답
 NOT_FOUND = "No relevant documents were found."
@@ -50,7 +50,7 @@ def retrieve(config: dict[str, Any], department: str, question: str) -> list[dic
     acl = department_filter(department) if cfg["acl_filter"] else None
     with open_index(config["paths"]["index"]) as client:
         points = client.query_points(
-            COLLECTION, query=vector, query_filter=acl, limit=cfg["top_k"]
+            config["index"]["collection"], query=vector, query_filter=acl, limit=cfg["top_k"]
         ).points
     return [{**p.payload, "score": p.score} for p in points]
 
