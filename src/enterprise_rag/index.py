@@ -18,7 +18,7 @@ from typing import Any
 import pyarrow as pa
 import pyarrow.parquet as pq
 from qdrant_client import QdrantClient, models
-from qdrant_client.http.exceptions import ResponseHandlingException
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from enterprise_rag import embedding, mask
 from enterprise_rag.config import is_url
@@ -207,10 +207,12 @@ def open_index(location: str | Path) -> Iterator[QdrantClient]:
     서버에 연결할 수 없으면 서버 주소와 띄우는 방법을 담아 `IndexServerError`.
     """
     if is_url(location):
-        client = QdrantClient(url=str(location))
+        # 서버 버전은 scripts/qdrant-server.sh가 클라이언트와 같은 마이너 버전으로 고정한다.
+        # 버전 확인을 켜 두면 서버가 없을 때 안내 메시지 앞에 경고가 한 번 더 찍힌다
+        client = QdrantClient(url=str(location), check_compatibility=False)
         try:
             client.get_collections()
-        except ResponseHandlingException as e:
+        except (ResponseHandlingException, UnexpectedResponse) as e:
             client.close()
             raise IndexServerError(
                 f"Qdrant 서버에 연결할 수 없다: {location} ({e})\n"

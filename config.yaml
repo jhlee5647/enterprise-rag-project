@@ -34,7 +34,7 @@ collect:
 index:
   chunk_size: 512     # 청크 길이 (임베딩 모델의 토큰 수)
   chunk_overlap: 64   # 앞 청크와 겹치는 토큰 수
-  collection: chunks  # 색인의 컬렉션 이름. 같은 서버에 색인을 따로 만들 때 바꾼다 (예: 마스킹을 끈 색인)
+  collection: chunks  # 색인의 Qdrant 컬렉션 이름. 같은 서버에 색인을 따로 만들 때 바꾼다 (예: 마스킹을 끈 색인)
 
 pii:
   types: [NAME, EMAIL, PHONE]   # PII 종류 목록: index가 가명 토큰([NAME] 등)으로 가릴 종류

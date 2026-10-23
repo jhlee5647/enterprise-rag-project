@@ -16,20 +16,28 @@ PID_FILE=$HOME_DIR/qdrant.pid
 LOG=$HOME_DIR/qdrant.log
 URL=http://127.0.0.1:6333
 
-running() { [[ -f $PID_FILE ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
+# pid 파일의 프로세스가 살아 있고 qdrant인지 (pid가 다른 프로세스에 다시 쓰였을 수 있다)
+running() {
+  [[ -f $PID_FILE ]] && grep -qa qdrant "/proc/$(cat "$PID_FILE")/cmdline" 2>/dev/null
+}
 
-install() {
+download_server() {
   [[ -x $BIN ]] && return
   mkdir -p "$HOME_DIR/bin"
   echo "Qdrant $VERSION 내려받는 중"
+  # 받다가 끊겨도 반쪽짜리 실행 파일이 남지 않도록 임시 폴더에 풀고 옮긴다
+  local tmp
+  tmp=$(mktemp -d "$HOME_DIR/download.XXXXXX")
   curl -fsSL "https://github.com/qdrant/qdrant/releases/download/$VERSION/qdrant-x86_64-unknown-linux-musl.tar.gz" \
-    | tar -xz --no-same-owner -C "$HOME_DIR/bin" qdrant
+    | tar -xz --no-same-owner -C "$tmp" qdrant
+  mv "$tmp/qdrant" "$BIN"
+  rmdir "$tmp"
 }
 
 case ${1:-} in
   start)
     if running; then echo "이미 떠 있다: $URL (pid $(cat "$PID_FILE"))"; exit 0; fi
-    install
+    download_server
     mkdir -p "$HOME_DIR/storage" "$HOME_DIR/snapshots"
     QDRANT__SERVICE__HOST=127.0.0.1 \
     QDRANT__STORAGE__STORAGE_PATH=$HOME_DIR/storage \
@@ -39,14 +47,17 @@ case ${1:-} in
     echo $! >"$PID_FILE"
     for _ in $(seq 60); do
       if curl -fs "$URL/readyz" >/dev/null; then echo "떠 있다: $URL (로그 $LOG)"; exit 0; fi
+      if ! running; then rm -f "$PID_FILE"; echo "서버가 바로 멈췄다. 로그: $LOG" >&2; exit 1; fi
       sleep 1
     done
-    echo "60초 안에 준비되지 않았다. 로그: $LOG" >&2; exit 1
+    kill "$(cat "$PID_FILE")"; rm -f "$PID_FILE"
+    echo "60초 안에 준비되지 않아 멈췄다. 로그: $LOG" >&2; exit 1
     ;;
   stop)
     if ! running; then echo "떠 있지 않다"; exit 0; fi
     kill "$(cat "$PID_FILE")"
-    while running; do sleep 1; done
+    for _ in $(seq 30); do running || break; sleep 1; done
+    if running; then kill -9 "$(cat "$PID_FILE")"; echo "30초 안에 멈추지 않아 강제로 멈췄다"; fi
     rm -f "$PID_FILE"; echo "멈췄다"
     ;;
   status)

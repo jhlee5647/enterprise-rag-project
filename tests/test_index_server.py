@@ -21,7 +21,7 @@ def test_t02_missing_server_stops_index_and_ask_with_address_and_how_to_start(pi
         capsys.readouterr()
         code = main(["--config", str(pipeline.config_path), *args])
 
-        assert code != 0
+        assert code == 2
         err = capsys.readouterr().err
         assert NO_SERVER in err
         assert "scripts/qdrant-server.sh start" in err
@@ -30,11 +30,12 @@ def test_t02_missing_server_stops_index_and_ask_with_address_and_how_to_start(pi
 def test_t03_index_and_ask_use_configured_collection(pipeline):
     pipeline.config["index"]["collection"] = "chunks-nomask"
     pipeline.index()
+    with open_index(pipeline.config["paths"]["index"]) as client:
+        # 처음 색인(fixture)이 만든 기본 컬렉션은 남아 있다. ask가 그쪽을 읽지 않는지 보려고 지운다
+        assert client.collection_exists("chunks")
+        client.delete_collection("chunks")
 
     asked = pipeline("marketing", QUESTION)
 
+    assert asked.code == 0
     assert "pnot0001" in asked.retrieved_ids
-    with open_index(pipeline.config["paths"]["index"]) as client:
-        assert client.collection_exists("chunks-nomask")
-        # 처음 색인(fixture)이 만든 기본 컬렉션은 그대로 남는다
-        assert client.collection_exists("chunks")
