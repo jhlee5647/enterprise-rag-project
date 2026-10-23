@@ -5,7 +5,8 @@
 `doc_id`와 허용 부서 `departments`), `answer`, `expected`(정답 문서의 `doc_id`와 허용 부서)가
 들어 있다. 정답 문서마다 그 문서의 사본(`copies`, 문서 ID와 허용 부서)도 들어 있다.
 
-비율은 모두 소수 셋째 자리로 반올림한다.
+지표 JSON에 들어가는 비율은 소수 셋째 자리로 반올림한다. 실행 한 번의 검색 적중률은
+반올림하지 않는다.
 
 PII 청크 하나에는 `answers`(사람이 확정한 정답 PII 값), `masked_text`(마스킹한 글),
 `masked`(마스커가 가린 원래 값)가 들어 있다. 비교는 위치가 아니라 값으로 한다.
@@ -36,10 +37,13 @@ def refusal_accuracy(records: list[dict[str, Any]]) -> float | None:
 def has_access(record: dict[str, Any]) -> bool:
     """정답 문서나 그 사본 중 하나 이상의 허용 부서에 실행한 부서가 들어 있으면 권한이 있다."""
     return any(
-        record["department"] in c["departments"]
-        for d in record["expected"]
-        for c in [d, *d["copies"]]
+        record["department"] in c["departments"] for d in record["expected"] for c in with_copies(d)
     )
+
+
+def with_copies(expected: dict[str, Any]) -> list[dict[str, Any]]:
+    """정답 문서 하나와 그 사본들. 적중과 권한은 이 중 하나로 판정한다."""
+    return [expected, *expected["copies"]]
 
 
 def hit_rate(record: dict[str, Any]) -> float | None:
@@ -50,11 +54,7 @@ def hit_rate(record: dict[str, Any]) -> float | None:
     if not has_access(record):
         return None
     retrieved = {c["doc_id"] for c in record["retrieved"]}
-    found = [
-        d
-        for d in record["expected"]
-        if {d["doc_id"], *(c["doc_id"] for c in d["copies"])} & retrieved
-    ]
+    found = [d for d in record["expected"] if {c["doc_id"] for c in with_copies(d)} & retrieved]
     return len(found) / len(record["expected"])
 
 

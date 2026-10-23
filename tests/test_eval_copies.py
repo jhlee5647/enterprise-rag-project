@@ -25,29 +25,29 @@ def retrieved_ids(record):
 
 
 @pytest.fixture
-def copies(make_pipeline):
+def copy_pipeline(make_pipeline):
     return make_pipeline(COPY_CELLS)
 
 
-def test_t01_copy_of_answer_document_counts_as_hit(copies):
+def test_t01_copy_of_answer_document_counts_as_hit(copy_pipeline):
     # marketing은 A와 A′를 모두 보고 둘의 점수가 같아, A′만 검색되는 실행은 regulatory로 만든다
-    run = copies.eval([row(LAUNCH, A, "marketing", "단일 홉", "O")], "t01", top_k=1)
+    run = copy_pipeline.eval([row(LAUNCH, A, "marketing", "단일 홉", "O")], "t01", top_k=1)
 
     record = run.record(LAUNCH, "regulatory")
     assert retrieved_ids(record) == [A_COPY]
     assert record["hit_rate"] == 1.0
 
 
-def test_t02_document_one_letter_different_is_not_a_copy(copies):
-    run = copies.eval([row(COLOR, A, "marketing", "단일 홉", "O")], "t02", top_k=1)
+def test_t02_document_one_letter_different_is_not_a_copy(copy_pipeline):
+    run = copy_pipeline.eval([row(COLOR, A, "marketing", "단일 홉", "O")], "t02", top_k=1)
 
     record = run.record(COLOR, "marketing")
     assert retrieved_ids(record) == [B]
     assert record["hit_rate"] == 0.0
 
 
-def test_t03_copy_retrieved_by_department_it_does_not_allow_is_a_leak(copies):
-    run = copies.eval(
+def test_t03_copy_retrieved_by_department_it_does_not_allow_is_a_leak(copy_pipeline):
+    run = copy_pipeline.eval(
         [row(LAUNCH, A, "marketing", "단일 홉", "O")], "t03", acl_filter=False, top_k=3
     )
 
@@ -59,7 +59,7 @@ def test_t03_copy_retrieved_by_department_it_does_not_allow_is_a_leak(copies):
     assert run.metrics["retrieval_leak_rate"] == 0.556
 
 
-def test_t04_hit_rate_is_rounded_to_three_decimals(copies):
+def test_t04_hit_rate_is_rounded_to_three_decimals(copy_pipeline):
     # 정답을 찾아야 하는 실행 3번: COLOR(정답 A)를 marketing(B만 검색, 0)과 regulatory(A′, 1)로,
     # COLOR(정답 B)를 marketing(B, 1)으로. regulatory는 B와 그 사본을 볼 수 없다. 2 ÷ 3
     rows = [
@@ -67,7 +67,7 @@ def test_t04_hit_rate_is_rounded_to_three_decimals(copies):
         row(COLOR + " for B", B, "marketing", "단일 홉", "O"),
     ]
 
-    run = copies.eval(rows, "t04", top_k=1)
+    run = copy_pipeline.eval(rows, "t04", top_k=1)
 
     assert run.metrics["hit_rate"] == 0.667
 
@@ -79,8 +79,8 @@ def test_t05_every_ratio_in_metrics_has_at_most_three_decimals(pipeline):
         assert value is None or round(value, 3) == value, name
 
 
-def test_t06_department_allowed_only_on_copy_has_access(copies):
-    run = copies.eval([row(LAUNCH, A, "marketing", "단일 홉", "O")], "t06", top_k=1)
+def test_t06_department_allowed_only_on_copy_has_access(copy_pipeline):
+    run = copy_pipeline.eval([row(LAUNCH, A, "marketing", "단일 홉", "O")], "t06", top_k=1)
 
     assert run.record(LAUNCH, "regulatory")["hit_rate"] is not None
     # 권한 없는 실행은 product 하나뿐이고 찾지 못함 응답을 돌려준다.
@@ -88,7 +88,7 @@ def test_t06_department_allowed_only_on_copy_has_access(copies):
     assert run.metrics["refusal_accuracy"] == 1.0
 
 
-def test_t07_department_allowed_on_neither_answer_nor_copy_has_no_access(copies):
-    run = copies.eval([row(LAUNCH, A, "marketing", "단일 홉", "O")], "t07", top_k=1)
+def test_t07_department_allowed_on_neither_answer_nor_copy_has_no_access(copy_pipeline):
+    run = copy_pipeline.eval([row(LAUNCH, A, "marketing", "단일 홉", "O")], "t07", top_k=1)
 
     assert run.record(LAUNCH, "product")["hit_rate"] is None
