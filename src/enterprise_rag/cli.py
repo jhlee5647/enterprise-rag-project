@@ -11,7 +11,7 @@ from enterprise_rag.collect import collect
 from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
 from enterprise_rag.evaluate import EvalError, evaluate
-from enterprise_rag.gen_eval import GenEvalError, extend_pii_answers, gen_eval
+from enterprise_rag.gen_eval import GenEvalError, extend_pii_answers, gen_eval, make_eval_set
 from enterprise_rag.index import index
 
 COMMANDS = {
@@ -33,10 +33,16 @@ def main(argv: list[str] | None = None) -> int:
     commands["eval"].add_argument(
         "--run-name", required=True, help="실행 이름. 결과는 runs/<실행 이름>/에 저장한다"
     )
-    commands["gen-eval"].add_argument(
+    only = commands["gen-eval"].add_mutually_exclusive_group()
+    only.add_argument(
         "--pii-only",
         action="store_true",
         help="평가셋은 두고 PII 정답셋만 만들거나 늘린다. 이미 있는 행은 그대로 둔다",
+    )
+    only.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="PII 정답셋은 두고 평가셋만 만든다. 평가셋이 이미 있으면 멈춘다",
     )
     args = parser.parse_args(argv)
 
@@ -63,7 +69,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "gen-eval":
         try:
-            (extend_pii_answers if args.pii_only else gen_eval)(load_config(args.config))
+            config = load_config(args.config)
+            if args.pii_only:
+                extend_pii_answers(config)
+            elif args.eval_only:
+                make_eval_set(config)
+            else:
+                gen_eval(config)
         except GenEvalError as e:
             print(e, file=sys.stderr)
             return 2
