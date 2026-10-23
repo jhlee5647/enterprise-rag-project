@@ -33,6 +33,11 @@ def main(argv: list[str] | None = None) -> int:
     commands["eval"].add_argument(
         "--run-name", required=True, help="실행 이름. 결과는 runs/<실행 이름>/에 저장한다"
     )
+    commands["gen-eval"].add_argument(
+        "--pii-only",
+        action="store_true",
+        help="평가셋은 두고 PII 정답셋만 만들거나 늘린다. 이미 있는 행은 그대로 둔다",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -58,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "gen-eval":
         try:
-            gen_eval(load_config(args.config))
+            gen_eval(load_config(args.config), args.pii_only)
         except GenEvalError as e:
             print(e, file=sys.stderr)
             return 2

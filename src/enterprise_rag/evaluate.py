@@ -26,7 +26,8 @@ EVAL_SET_COLUMNS = ["question", "answer", "doc_ids", "department", "question_typ
 DOC_ID_SEPARATOR = ";"
 # PII 정답셋 CSV의 열. gen-eval(#7)이 초안으로 쓰고, 사람은 pii를 고쳐 정답셋으로 확정한다.
 # text는 마스킹 전 원문 청크, pii는 "종류: 값"을 `;`로 이은 목록이다(예: "NAME: Kate Morgan; ...").
-PII_ANSWER_COLUMNS = ["doc_id", "chunk", "text", "pii"]
+# split은 개발용(dev)·측정용(test) 표시다(#18). 마스커 규칙은 dev만 보고 만든다.
+PII_ANSWER_COLUMNS = ["doc_id", "chunk", "text", "pii", "split"]
 PII_SEPARATOR = ";"
 
 

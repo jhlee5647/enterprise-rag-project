@@ -40,16 +40,21 @@ QUESTION_TYPES = {
 HOP_PREFIX = re.compile(r"\A<\d+-hop>\n\n")
 
 
-def gen_eval(config: dict[str, Any]) -> Path:
+def gen_eval(config: dict[str, Any], pii_only: bool = False) -> Path:
     """부서마다 질문을 만들어 config의 평가셋 경로에 쓰고 그 경로를 돌려준다. `keep`은 비워 둔다.
 
     PII 정답셋 초안도 config의 PII 정답셋 경로에 쓴다. 두 파일 중 하나라도 이미 있으면 사람이
     고친 내용을 지우지 않도록 생성하기 전에 멈춘다.
+
+    `pii_only`이면 평가셋은 만들지도 건드리지도 않고 PII 정답셋만 만들거나 늘려 그 경로를 돌려준다.
     """
+    pii_path = config["paths"]["pii_answers"]
+    if pii_only:
+        write_pii_draft(config)
+        return pii_path
     path = config["paths"]["eval_set"]
     if path.exists():
         raise GenEvalError(f"평가셋 파일이 이미 있다: {path} (지우거나 옮긴 뒤 다시 실행한다)")
-    pii_path = config["paths"]["pii_answers"]
     if pii_path.exists():
         raise GenEvalError(
             f"PII 정답셋 파일이 이미 있다: {pii_path} (지우거나 옮긴 뒤 다시 실행한다)"
@@ -91,11 +96,78 @@ def write_pii_draft(config: dict[str, Any]) -> None:
 
     PII는 config의 PII 종류 목록과 상관없이 모든 종류를 찾는다. 정답셋은 마스킹 설정을 바꿔도
     그대로 쓰는 자료이기 때문이다.
+
+    CSV가 이미 있으면 그 행은 사람이 확정한 행이므로 원문과 PII 목록을 그대로 두고 새 청크 행만
+    더한다. 같은 시드로 뽑으면 앞의 청크가 기존 청크와 같다(`random.sample`은 뽑는 수를 늘려도
+    앞쪽 결과가 같다). 행마다 뽑힌 순서로 개발용(`dev`)과 측정용(`test`)을 번갈아 붙인다.
+    그래서 처음부터 만들든 늘리든 같은 청크에는 같은 표시가 붙고, 홀수면 개발용이 하나 많다.
     """
     cfg = config["gen_eval"]
+    path = config["paths"]["pii_answers"]
+    confirmed = read_pii_rows(path) if path.exists() else {}
+    if cfg["pii_chunks"] < len(confirmed):
+        raise GenEvalError(
+            f"PII 정답셋에 이미 {len(confirmed)}행이 있는데 청크 수를 {cfg['pii_chunks']}개로 "
+            f"줄였다: {path} (확정된 행을 지우려면 CSV에서 직접 지운다)"
+        )
+    chunks = source_chunks(config)
+    text_of = {(c["doc_id"], c["chunk"]): c["text"] for c in chunks}
+    changed = [
+        doc_id for (doc_id, n), r in confirmed.items() if text_of.get((doc_id, n)) != r["text"]
+    ]
+    if changed:
+        raise GenEvalError(
+            f"PII 정답셋의 원문이 지금 청크와 다른 행이 있다: 문서 {', '.join(changed)} "
+            "(청크 설정이 바뀌었는지 확인한다)"
+        )
+    picked = random.Random(cfg["seed"]).sample(chunks, min(cfg["pii_chunks"], len(chunks)))
+    keys = {(c["doc_id"], c["chunk"]) for c in picked}
+    unpicked = [doc_id for doc_id, n in confirmed if (doc_id, n) not in keys]
+    if unpicked:
+        raise GenEvalError(
+            f"PII 정답셋의 행이 시드로 뽑은 청크에 없다: 문서 {', '.join(unpicked)} "
+            "(seed가 바뀌었는지 확인한다)"
+        )
+
+    new = [c for c in picked if (c["doc_id"], c["chunk"]) not in confirmed]
+    if new:  # 새 행이 없으면 spaCy 모델을 불러오지 않는다
+        finder = mask.Masker(config["pii"]["spacy_model"], list(mask.TYPES))
+        pii_of = {(c["doc_id"], c["chunk"]): format_pii(finder.find(c["text"])) for c in new}
+    rows = [
+        {
+            **c,
+            "pii": confirmed[key]["pii"] if key in confirmed else pii_of[key],
+            "split": "dev" if order % 2 == 0 else "test",
+        }
+        for order, c in enumerate(picked)
+        for key in [(c["doc_id"], c["chunk"])]
+    ]
+    rows.sort(key=lambda r: (r["doc_id"], r["chunk"]))
+
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=PII_ANSWER_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    log.info(
+        "원문 청크 %d개 중 %d개로 PII 정답셋 초안을 %s에 썼다 (확정된 행 %d개, 새 행 %d개)",
+        len(chunks),
+        len(rows),
+        path,
+        len(confirmed),
+        len(new),
+    )
+
+
+def read_pii_rows(path: Path) -> dict[tuple[str, int], dict[str, str]]:
+    """PII 정답셋 CSV의 행을 (문서 ID, 청크 번호)로 찾을 수 있게 읽는다."""
+    with open(path, newline="") as f:
+        return {(r["doc_id"], int(r["chunk"])): r for r in csv.DictReader(f)}
+
+
+def source_chunks(config: dict[str, Any]) -> list[dict[str, Any]]:
+    """문서 표의 마스킹 전 원문을 `index`와 같은 설정으로 잘라 청크 목록으로 돌려준다."""
     embedder = embedding.load_embedder(config)
-    finder = mask.Masker(config["pii"]["spacy_model"], list(mask.TYPES))
-    chunks = [
+    return [
         {"doc_id": doc["doc_id"], "chunk": number, "text": text}
         for doc in pq.read_table(
             config["paths"]["documents"], columns=["doc_id", "text"]
@@ -109,16 +181,6 @@ def write_pii_draft(config: dict[str, Any]) -> None:
             )
         )
     ]
-    picked = random.Random(cfg["seed"]).sample(chunks, min(cfg["pii_chunks"], len(chunks)))
-    picked.sort(key=lambda c: (c["doc_id"], c["chunk"]))
-
-    path = config["paths"]["pii_answers"]
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=PII_ANSWER_COLUMNS)
-        writer.writeheader()
-        for c in picked:
-            writer.writerow({**c, "pii": format_pii(finder.find(c["text"]))})
-    log.info("원문 청크 %d개 중 %d개로 PII 정답셋 초안을 %s에 썼다", len(chunks), len(picked), path)
 
 
 def question_row(
