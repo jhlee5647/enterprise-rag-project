@@ -40,7 +40,7 @@ QUESTION_TYPES = {
 # RAGAS는 다중 홉 질문의 근거 청크 앞에 `<1-hop>` 같은 머리말과 빈 줄을 붙인다
 HOP_PREFIX = re.compile(r"\A<\d+-hop>\n\n")
 # 요약 단계에서 vLLM에 한꺼번에 보내는 요청 수
-SUMMARY_REQUESTS = 16
+SUMMARY_REQUESTS = 16  # RAGAS RunConfig의 max_workers 기본값과 같다
 
 
 def gen_eval(config: dict[str, Any]) -> Path:
@@ -279,15 +279,17 @@ def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dic
         SingleHopSpecificQuerySynthesizer,
     )
     from ragas.testset.transforms import apply_transforms, default_transforms_for_prechunked
+    from ragas.testset.transforms.extractors.llm_based import SummaryExtractor
 
-    gen = config["gen_eval"].get("llm") or config["llm"]
+    gen_llm = config["gen_eval"].get("llm")
     llm = LangchainLLMWrapper(
         ChatOpenAI(
-            model=gen["model"],
-            base_url=gen["base_url"],
+            model=(gen_llm or config["llm"])["model"],
+            base_url=(gen_llm or config["llm"])["base_url"],
             api_key="EMPTY",  # vLLM은 키를 보지 않는다
-            # 같은 말을 되풀이하는 출력이 문맥 길이까지 가지 않게 한다. 넘으면 그 요청은 실패한다
-            max_tokens=gen.get("max_tokens"),
+            # 같은 말을 되풀이하는 출력이 문맥 길이까지 가지 않게 한다. 넘으면 그 요청은 실패한다.
+            # 생성 LLM을 따로 지정했을 때만 건다(답변 LLM의 상한은 답변 길이용이다)
+            max_tokens=gen_llm.get("max_tokens") if gen_llm else None,
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             # RAGAS는 단계마다 새 이벤트 루프를 만든다. 이전 루프에서 연 연결을 다시 쓰면
             # Connection error가 나므로 연결을 재사용하지 않는다(localhost라 비용이 작다).
@@ -302,6 +304,8 @@ def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dic
         for c in chunks
     ]
     summary, *transforms = default_transforms_for_prechunked(llm=llm, embedding_model=embeddings)
+    # RAGAS 버전이 바뀌어 첫 단계가 요약이 아니게 되면 바로 알 수 있게 한다
+    assert isinstance(summary, SummaryExtractor), type(summary)
     kept = summarized_nodes(summary, nodes)
     if not kept:
         log.warning("요약이 남은 청크가 없어 질문을 만들지 않는다")
@@ -347,13 +351,18 @@ def summarized_nodes(summary: Any, nodes: list[Any]) -> list[Any]:
     """
     import asyncio
 
+    from langchain_core.exceptions import OutputParserException
+    from ragas.exceptions import LLMDidNotFinishException, RagasOutputParserException
+
+    # 청크 탓인 실패만 뺀다. 연결 오류처럼 청크와 상관없는 실패는 그대로 멈춘다
+    chunk_errors = (LLMDidNotFinishException, RagasOutputParserException, OutputParserException)
     limit = asyncio.Semaphore(SUMMARY_REQUESTS)
 
     async def one(node: Any) -> Exception | None:
         async with limit:
             try:
                 name, value = await summary.extract(node)
-            except Exception as e:  # 형식 오류, 길이 상한 등 RAGAS가 내는 오류는 여러 가지다
+            except chunk_errors as e:
                 return e
         node.add_property(name, value)
         return None
