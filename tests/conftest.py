@@ -194,17 +194,21 @@ class Pipeline:
             return code
         return EvalRun(Path(self.config["paths"]["runs"]) / run_name)
 
-    def gen_eval(self, expect_code=0, **gen_eval):
-        """`gen-eval`을 실행하고 평가셋 CSV의 행을 돌려준다.
+    def gen_eval(self, expect_code=0, pii_only=False, **gen_eval):
+        """`gen-eval`을 실행하고 평가셋 CSV의 행을 돌려준다. `pii_only`이면 PII 정답셋만 늘리고
+        PII 정답셋 CSV의 행을 돌려준다.
 
         `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
         """
         self.config["gen_eval"].update(gen_eval)
         write_config(self.config_path, self.config)
-        code = main(["--config", str(self.config_path), "gen-eval"])
+        args = ["--config", str(self.config_path), "gen-eval"]
+        code = main(args + ["--pii-only"] if pii_only else args)
         assert code == expect_code
         if code != 0:
             return code
+        if pii_only:
+            return self.pii_draft()
         with open(self.config["paths"]["eval_set"], newline="") as f:
             reader = csv.DictReader(f)
             assert reader.fieldnames == EVAL_SET_COLUMNS
@@ -216,6 +220,13 @@ class Pipeline:
             reader = csv.DictReader(f)
             assert reader.fieldnames == PII_ANSWER_COLUMNS
             return list(reader)
+
+    def write_pii_answers(self, rows):
+        """사람이 검수한 것처럼 PII 정답셋 CSV를 `rows`로 덮어쓴다. 열은 첫 행의 열을 따른다."""
+        with open(self.config["paths"]["pii_answers"], "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
 
     def documents(self):
         """문서 표의 행."""
