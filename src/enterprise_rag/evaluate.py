@@ -9,6 +9,7 @@ import csv
 import json
 import logging
 import shutil
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -49,12 +50,11 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
     pii_answers = load_pii_answers(pii_path) if pii_path.exists() else None
     if pii_answers is None:
         log.warning("PII 정답셋이 없어 PII 지표는 비워 둔다: %s", pii_path)
-    allowed = {
-        d["doc_id"]: d["departments"]
-        for d in pq.read_table(
-            config["paths"]["documents"], columns=["doc_id", "departments"]
-        ).to_pylist()
-    }
+    documents = pq.read_table(
+        config["paths"]["documents"], columns=["doc_id", "departments", "text"]
+    ).to_pylist()
+    allowed = {d["doc_id"]: d["departments"] for d in documents}
+    copies = copies_of(documents)
     missing = sorted({i for q in questions for i in q["doc_ids"]} - allowed.keys())
     if missing:
         raise EvalError(f"평가셋의 정답 문서 ID가 문서 표에 없다: {', '.join(missing)}")
@@ -65,7 +65,14 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
             record = {
                 "question": q["question"],
                 "department": department,
-                "expected": [{"doc_id": i, "departments": allowed[i]} for i in q["doc_ids"]],
+                "expected": [
+                    {
+                        "doc_id": i,
+                        "departments": allowed[i],
+                        "copies": [{"doc_id": c, "departments": allowed[c]} for c in copies[i]],
+                    }
+                    for i in q["doc_ids"]
+                ],
                 "retrieved": [
                     {"doc_id": c["doc_id"], "departments": c["departments"]}
                     for c in result["retrieved"]
@@ -92,6 +99,17 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     log.info("질문 %d개, 실행 %d번의 결과를 %s에 저장했다", len(questions), len(records), folder)
     return folder
+
+
+def copies_of(documents: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """문서 ID마다 그 문서의 사본 ID 목록(자기 자신은 빼고, 없으면 빈 목록).
+
+    사본은 본문의 연속된 공백을 공백 하나로 바꾸고 앞뒤 공백을 지운 뒤 완전히 같은 문서다.
+    """
+    groups = defaultdict(list)
+    for d in documents:
+        groups[" ".join(d["text"].split())].append(d["doc_id"])
+    return {i: [c for c in group if c != i] for group in groups.values() for i in group}
 
 
 def load_eval_set(path: Path) -> list[dict[str, Any]]:

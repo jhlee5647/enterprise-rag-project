@@ -3,7 +3,9 @@
 
 실행 기록 하나는 (질문, 부서) 한 번의 실행이다. `department`, `retrieved`(검색된 청크의
 `doc_id`와 허용 부서 `departments`), `answer`, `expected`(정답 문서의 `doc_id`와 허용 부서)가
-들어 있다.
+들어 있다. 정답 문서마다 그 문서의 사본(`copies`, 문서 ID와 허용 부서)도 들어 있다.
+
+비율은 모두 소수 셋째 자리로 반올림한다.
 
 PII 청크 하나에는 `answers`(사람이 확정한 정답 PII 값), `masked_text`(마스킹한 글),
 `masked`(마스커가 가린 원래 값)가 들어 있다. 비교는 위치가 아니라 값으로 한다.
@@ -20,7 +22,7 @@ def retrieval_leak_rate(records: list[dict[str, Any]]) -> float | None:
     if not chunks:
         return None
     leaked = sum(department not in c["departments"] for department, c in chunks)
-    return leaked / len(chunks)
+    return round(leaked / len(chunks), 3)
 
 
 def refusal_accuracy(records: list[dict[str, Any]]) -> float | None:
@@ -28,30 +30,38 @@ def refusal_accuracy(records: list[dict[str, Any]]) -> float | None:
     denied = [r for r in records if not has_access(r)]
     if not denied:
         return None
-    return sum(r["answer"] == NOT_FOUND for r in denied) / len(denied)
+    return round(sum(r["answer"] == NOT_FOUND for r in denied) / len(denied), 3)
 
 
 def has_access(record: dict[str, Any]) -> bool:
-    """정답 문서 중 하나 이상의 허용 부서에 실행한 부서가 들어 있으면 권한이 있다."""
-    return any(record["department"] in d["departments"] for d in record["expected"])
+    """정답 문서나 그 사본 중 하나 이상의 허용 부서에 실행한 부서가 들어 있으면 권한이 있다."""
+    return any(
+        record["department"] in c["departments"]
+        for d in record["expected"]
+        for c in [d, *d["copies"]]
+    )
 
 
 def hit_rate(record: dict[str, Any]) -> float | None:
-    """실행 한 번의 검색 적중률: 정답 문서 중 검색된 비율. 권한이 없는 실행이면 None.
+    """실행 한 번의 검색 적중률: 정답 문서 중 그 문서나 사본이 검색된 비율. 권한이 없으면 None.
 
     다중 홉 질문은 정답 2개 중 1개를 찾으면 0.5다.
     """
     if not has_access(record):
         return None
-    expected = {d["doc_id"] for d in record["expected"]}
     retrieved = {c["doc_id"] for c in record["retrieved"]}
-    return len(expected & retrieved) / len(expected)
+    found = [
+        d
+        for d in record["expected"]
+        if {d["doc_id"], *(c["doc_id"] for c in d["copies"])} & retrieved
+    ]
+    return len(found) / len(record["expected"])
 
 
 def mean_hit_rate(records: list[dict[str, Any]]) -> float | None:
     """권한이 있는 실행들의 검색 적중률 평균. 그런 실행이 없으면 None."""
     rates = [rate for r in records if (rate := hit_rate(r)) is not None]
-    return sum(rates) / len(rates) if rates else None
+    return round(sum(rates) / len(rates), 3) if rates else None
 
 
 def pii_miss_rate(chunks: list[dict[str, Any]]) -> float | None:
