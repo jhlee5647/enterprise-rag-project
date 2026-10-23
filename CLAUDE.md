@@ -20,7 +20,7 @@
 
 ### Issue and PR format
 
-스펙 이슈, 구현 티켓, PR 본문(`/to-spec`, `/to-tickets`, `/pr`)은 스킬 템플릿 대신 `docs/agents/issue-format.md`의 형식으로 쓴다.
+스펙 이슈, 구현 티켓, PR 본문(`/to-spec`, `/to-tickets`, `/pr`)은 스킬 템플릿 대신 `docs/agents/issue-format.md`의 형식으로 쓴다. 새 기능과 개선은 형식이 다르다. `/code-review`의 Spec 검토도 이 문서에 따라 스펙을 읽는다.
 
 ### Triage labels
 
