@@ -22,7 +22,7 @@ from enterprise_rag.evaluate import (
     PII_ANSWER_COLUMNS,
     format_pii,
 )
-from enterprise_rag.index import COLLECTION, chunk, department_filter, open_index
+from enterprise_rag.index import chunk, department_filter, open_index
 
 log = logging.getLogger(__name__)
 
@@ -242,7 +242,7 @@ def department_chunks(config: dict[str, Any], department: str) -> list[dict[str,
         chunks, offset = [], None
         while True:
             points, offset = client.scroll(
-                COLLECTION,
+                config["index"]["collection"],
                 scroll_filter=department_filter(department),
                 limit=1000,
                 offset=offset,

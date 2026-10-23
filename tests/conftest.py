@@ -9,7 +9,7 @@ import yaml
 from enterprise_rag import embedding
 from enterprise_rag.cli import main
 from enterprise_rag.evaluate import EVAL_SET_COLUMNS, PII_ANSWER_COLUMNS
-from enterprise_rag.index import COLLECTION, open_index
+from enterprise_rag.index import open_index
 from tests.fake_idl import FakeIDL
 from tests.fake_models import FakeEmbedder, FakeVLLM
 
@@ -45,7 +45,7 @@ def make_config(out_dir, quota=2, seed=42, max_body_chars=1_000_000):
                 "Product Design & Quality": "product",
             },
         },
-        "index": {"chunk_size": 512, "chunk_overlap": 64},
+        "index": {"chunk_size": 512, "chunk_overlap": 64, "collection": "chunks"},
         "pii": {"types": ["NAME", "EMAIL", "PHONE"], "spacy_model": "en_core_web_lg", "workers": 1},
         "embedding": {"model": "fake-embedding", "dtype": "bfloat16"},
         "ask": {"acl_filter": True, "retrieval": "dense", "reranker": "none", "top_k": 5},
@@ -245,8 +245,8 @@ class Pipeline:
 
     def chunks(self, doc_id):
         """색인에 들어간 그 문서의 청크 내용, 청크 순서대로."""
-        with open_index(Path(self.config["paths"]["index"])) as client:
-            points, _ = client.scroll(COLLECTION, limit=10_000)
+        with open_index(self.config["paths"]["index"]) as client:
+            points, _ = client.scroll(self.config["index"]["collection"], limit=10_000)
         found = sorted(
             (p.payload for p in points if p.payload["doc_id"] == doc_id), key=lambda p: p["chunk"]
         )
