@@ -61,7 +61,7 @@ def test_extra_document_with_too_long_body_is_skipped_and_logged(run_collect):
     # 본문 길이: mkea0002 110자, mkea0001 111자, mkea0003 90자. 한도와 같은 90자는 수집한다.
     # 건너뛴 문서는 할당량을 차지하지 않아 다음 후보로 채운다.
     collected = run_collect(
-        {MARKETING_EMAIL: ["mkea0002", "mkea0001", "mkea0003"]}, quota=1, max_chars=90
+        {MARKETING_EMAIL: ["mkea0002", "mkea0001", "mkea0003"]}, quota=1, max_body_chars=90
     )
 
     assert collected.sample_ids == ["mkea0003"]

@@ -69,3 +69,10 @@ def test_t08_unknown_department_fails_with_valid_departments(pipeline):
     assert asked.code != 0
     for department in ("marketing", "regulatory", "product"):
         assert department in asked.err
+
+
+def test_extra_answer_length_is_capped_by_config(pipeline):
+    # 상한이 없으면 되풀이되는 답변이 모델 한도(16,384토큰)까지 이어져 요청 시간 제한을 넘긴다
+    pipeline("marketing", "influencer budget")
+
+    assert [r["max_tokens"] for r in pipeline.vllm.requests] == [1024]
