@@ -31,6 +31,7 @@ def load_embedder(config: dict[str, Any]) -> Embedder:
 
 
 def check_dtype(dtype: str) -> None:
+    """정밀도가 `DTYPES`에 없으면 ValueError."""
     if dtype not in DTYPES:
         raise ValueError(
             f"embedding.dtype(임베딩 정밀도)는 {', '.join(DTYPES)} 중 하나여야 한다: {dtype}"
@@ -51,9 +52,7 @@ class SentenceTransformerEmbedder:
         import torch  # 무거워서 쓸 때만 불러온다
         from sentence_transformers import SentenceTransformer
 
-        self._model = SentenceTransformer(
-            model, model_kwargs={"torch_dtype": getattr(torch, dtype)}
-        )
+        self._model = SentenceTransformer(model, model_kwargs={"dtype": getattr(torch, dtype)})
         self.dim = self._model.get_embedding_dimension()
 
     def token_spans(self, text: str) -> list[tuple[int, int]]:

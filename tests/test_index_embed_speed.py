@@ -20,11 +20,11 @@ def points(pipeline):
 
 
 def test_t01_batched_index_has_same_points_as_one_batch(pipeline, monkeypatch):
-    # 질의응답 fixture는 청크가 열 몇 개라, 묶음을 작게 해 여러 묶음과 나머지 묶음을 거치게 한다
     monkeypatch.setattr(index, "EMBED_BATCH", 10_000)
     monkeypatch.setattr(index, "UPSERT_BATCH", 10_000)
     pipeline.index()
     one_batch = points(pipeline)
+    # 질의응답 fixture는 청크가 열 몇 개라, 묶음을 작게 해 여러 묶음과 나머지 묶음을 거치게 한다
     monkeypatch.setattr(index, "EMBED_BATCH", 5)
     monkeypatch.setattr(index, "UPSERT_BATCH", 3)
 
