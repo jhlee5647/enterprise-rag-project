@@ -4,7 +4,8 @@
   토큰은 공백으로 나눈 단어 하나다.
 - 가짜 vLLM: OpenAI 호환 `/v1/chat/completions`를 흉내 낸다. 받은 근거 중 질문과 겹치는 단어가
   있는 근거가 있으면 그 근거 번호를 적어 답하고, 없으면 찾지 못함 응답 문구를 그대로 돌려준다.
-  `and`, `the` 같은 불용어는 겹치는 단어로 치지 않는다.
+  `and`, `the` 같은 불용어는 겹치는 단어로 치지 않는다. `ask`의 프롬프트가 아니면(예: RAGAS)
+  빈 JSON `{}`을 돌려준다.
 """
 
 import json
@@ -62,6 +63,8 @@ class FakeVLLM:
 
     def _answer(self, request: dict) -> str:
         prompt = request["messages"][-1]["content"]
+        if "\n\nQuestion: " not in prompt:
+            return "{}"
         sources, question = prompt.split("\n\nQuestion: ")
         chunks = re.findall(r"^\[(\d+)\] (.*?)(?=\n\[\d+\] |\Z)", sources, re.M | re.S)
         cited = [n for n, text in chunks if words(text) & words(question)]
@@ -78,7 +81,15 @@ class FakeVLLM:
                 fake.requests.append(body)
                 content = fake._answer(body)
                 payload = json.dumps(
-                    {"choices": [{"message": {"role": "assistant", "content": content}}]}
+                    {
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {"role": "assistant", "content": content},
+                                "finish_reason": "stop",
+                            }
+                        ]
+                    }
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
