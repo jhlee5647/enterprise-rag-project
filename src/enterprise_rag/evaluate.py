@@ -107,7 +107,7 @@ def measured_chunks(answers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """PII 지표를 낼 청크: 개발용·측정용 표시가 있으면 측정용(test)만, 없으면(#7 정답셋) 전부."""
     if not any(r.get("split") for r in answers):
         return answers
-    return [r for r in answers if r["split"] == "test"]
+    return [r for r in answers if r.get("split") == "test"]
 
 
 def mask_pii_answers(config: dict[str, Any], answers: list[dict[str, Any]]) -> list[dict[str, Any]]:

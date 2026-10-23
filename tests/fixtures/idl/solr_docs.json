@@ -860,5 +860,34 @@
     "bates": "JLI00000911",
     "dateaddeducsf": "2024 June 27",
     "topic": "Product Design & Quality"
+  },
+  {
+    "id": "mskx0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Masking case",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000912",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Product Design & Quality"
   }
 ]

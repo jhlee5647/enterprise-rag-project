@@ -65,3 +65,8 @@ def test_t12_document_p_is_still_masked(make_pipeline):
     assert indexed(make_pipeline, "pnot0001") == [
         "Please contact [NAME] at [EMAIL] or [PHONE] about the influencer budget."
     ]
+
+
+def test_extra_name_with_latin_extended_letters_is_still_masked(make_pipeline):
+    # 예: 체코어 이름. 라틴 문자 외 글자 규칙이 Latin-1 밖의 라틴 글자를 잡음으로 보면 안 된다.
+    assert indexed(make_pipeline, "mskx0001") == ["[NAME] wrote the memo."]

@@ -11,7 +11,7 @@ from presidio_analyzer import (
     RecognizerRegistry,
     RecognizerResult,
 )
-from presidio_analyzer.nlp_engine import SpacyNlpEngine
+from presidio_analyzer.nlp_engine import NlpArtifacts, SpacyNlpEngine
 from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
@@ -32,7 +32,8 @@ NAME_SEPARATOR = re.compile(r"\s*\n\s*| and ")
 SENTENCE_AFTER_NAME = re.compile(r"\.\s[A-Z]")
 # 이 중 하나라도 맞는 이름 후보는 OCR 잡음으로 보고 버린다
 NOT_NAME = [
-    re.compile(r"[^A-Za-zÀ-ÖØ-öø-ÿ0-9\s.'-]"),  # 라틴 문자, 숫자, 공백, `.` `-` `'` 외의 글자
+    # 라틴 문자(확장 포함), 숫자, 공백, `.` `-` `'` 외의 글자
+    re.compile(r"[^A-Za-zÀ-ÖØ-öø-ɏ0-9\s.'-]"),
     re.compile(r"^(?!.*[^\W\d_]{2})", re.DOTALL),  # 알파벳 2글자 이상인 단어가 없음
     re.compile(r"([^\W\d_]{2,3})\1{2,}"),  # 같은 2~3글자가 3번 이상 연달아 반복됨
     re.compile(r"^(?!.*(?<!\w)[A-Z])", re.DOTALL),  # 대문자로 시작하는 단어가 없음
@@ -96,7 +97,9 @@ def load_masker(config: dict[str, Any]) -> Masker:
 class NameRecognizer(SpacyRecognizer):
     """spaCy가 PERSON으로 찾은 이름 후보의 경계를 고치고, OCR 잡음인 후보를 버린다."""
 
-    def analyze(self, text, entities, nlp_artifacts=None):
+    def analyze(
+        self, text: str, entities: list[str], nlp_artifacts: NlpArtifacts | None = None
+    ) -> list[RecognizerResult]:
         return [
             piece
             for found in super().analyze(text, entities, nlp_artifacts)
@@ -141,7 +144,7 @@ def _analyzer(spacy_model: str) -> AnalyzerEngine:
     """spaCy 모델은 불러오는 데 몇 초 걸리므로 모델마다 한 번만 만든다."""
     registry = RecognizerRegistry(supported_languages=["en"])
     registry.add_recognizer(NameRecognizer(supported_entities=["PERSON"]))
-    # 저자 표기는 대소문자로 판정하므로 Presidio 기본값(IGNORECASE)을 끈다
+    # 저자 표기는 대소문자로 판정하므로 Presidio 기본 플래그(IGNORECASE 등)를 모두 끈다
     author = Pattern("author", AUTHOR, 1.0)
     registry.add_recognizer(
         PatternRecognizer(
