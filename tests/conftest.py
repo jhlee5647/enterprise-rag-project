@@ -196,14 +196,18 @@ class Pipeline:
 
     def gen_eval(self, expect_code=0, pii_only=False, eval_only=False, **gen_eval):
         """`gen-eval`을 실행하고 평가셋 CSV의 행을 돌려준다. `pii_only`이면 PII 정답셋만 늘리고
-        PII 정답셋 CSV의 행을 돌려준다. `eval_only`이면 평가셋만 만든다.
+        PII 정답셋 CSV의 행을 돌려준다. `eval_only`이면 평가셋만 만들고 평가셋 CSV의 행을 돌려준다.
 
         `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
         """
         self.config["gen_eval"].update(gen_eval)
         write_config(self.config_path, self.config)
         args = ["--config", str(self.config_path), "gen-eval"]
-        code = main(args + ["--pii-only"] * pii_only + ["--eval-only"] * eval_only)
+        if pii_only:
+            args.append("--pii-only")
+        if eval_only:
+            args.append("--eval-only")
+        code = main(args)
         assert code == expect_code
         if code != 0:
             return code

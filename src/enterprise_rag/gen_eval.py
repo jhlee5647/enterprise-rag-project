@@ -47,7 +47,7 @@ def gen_eval(config: dict[str, Any]) -> Path:
 
     두 파일 중 하나라도 이미 있으면 사람이 고친 내용을 지우지 않도록 생성하기 전에 멈춘다.
     """
-    _refuse_existing(config["paths"]["eval_set"])
+    _refuse_existing_eval_set(config["paths"]["eval_set"])
     pii_path = config["paths"]["pii_answers"]
     if pii_path.exists():
         raise GenEvalError(
@@ -64,7 +64,7 @@ def make_eval_set(config: dict[str, Any]) -> Path:
     PII 정답셋은 만들지도 건드리지도 않는다. 평가셋 파일이 이미 있으면 생성하기 전에 멈춘다.
     """
     path = config["paths"]["eval_set"]
-    _refuse_existing(path)
+    _refuse_existing_eval_set(path)
     cfg = config["gen_eval"]
     rows = []
     for department in departments(config["collect"]["departments"]):
@@ -96,7 +96,7 @@ def make_eval_set(config: dict[str, Any]) -> Path:
     return path
 
 
-def _refuse_existing(eval_set: Path) -> None:
+def _refuse_existing_eval_set(eval_set: Path) -> None:
     """검수한 평가셋을 지우지 않도록, 평가셋 파일이 이미 있으면 멈춘다."""
     if eval_set.exists():
         raise GenEvalError(f"평가셋 파일이 이미 있다: {eval_set} (지우거나 옮긴 뒤 다시 실행한다)")
