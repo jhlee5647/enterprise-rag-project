@@ -4,6 +4,7 @@ import re
 from functools import cache
 from typing import Any, NamedTuple
 
+import spacy
 from presidio_analyzer import (
     AnalyzerEngine,
     Pattern,
@@ -11,10 +12,21 @@ from presidio_analyzer import (
     RecognizerRegistry,
     RecognizerResult,
 )
-from presidio_analyzer.nlp_engine import NlpArtifacts, SpacyNlpEngine
+from presidio_analyzer.nlp_engine import NerModelConfiguration, NlpArtifacts, SpacyNlpEngine
 from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
+
+# 마스커 버전: 마스커 규칙을 바꿀 때 올린다. 바뀌면 `index`가 저장된 마스킹 결과를 쓰지 않는다.
+VERSION = 1
+
+# spaCy에서 불러올 단계. 이름 인식에는 `ner`과 그 입력인 `tok2vec`만 쓴다 (설계 기록 10)
+SPACY_PIPES = ["tok2vec", "ner"]
+# spaCy가 찾는 PERSON 외 개체. 가리지 않으므로 Presidio가 개체마다 찍는 경고를 끈다
+IGNORED_LABELS = [
+    "CARDINAL", "DATE", "EVENT", "FAC", "GPE", "LANGUAGE", "LAW", "LOC", "MONEY",
+    "NORP", "ORDINAL", "ORG", "PERCENT", "PRODUCT", "QUANTITY", "TIME", "WORK_OF_ART",
+]  # fmt: skip
 
 # `@` 자리에 OCR로 깨진 `©`, `(c)`, `(c~`도 받는다: support©juulvapor.com
 EMAIL = (
@@ -139,6 +151,15 @@ def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
     return pieces
 
 
+class NerOnlyNlpEngine(SpacyNlpEngine):
+    """spaCy 모델에서 `SPACY_PIPES` 단계만 켜서 불러온다. GPU는 쓰지 않는다."""
+
+    def load(self) -> None:
+        self.nlp = {
+            m["lang_code"]: spacy.load(m["model_name"], enable=SPACY_PIPES) for m in self.models
+        }
+
+
 @cache
 def _analyzer(spacy_model: str) -> AnalyzerEngine:
     """spaCy 모델은 불러오는 데 몇 초 걸리므로 모델마다 한 번만 만든다."""
@@ -153,5 +174,8 @@ def _analyzer(spacy_model: str) -> AnalyzerEngine:
     )
     registry.add_recognizer(PatternRecognizer("EMAIL", patterns=[Pattern("email", EMAIL, 1.0)]))
     registry.add_recognizer(PatternRecognizer("PHONE", patterns=[Pattern("phone", PHONE, 1.0)]))
-    nlp_engine = SpacyNlpEngine(models=[{"lang_code": "en", "model_name": spacy_model}])
+    nlp_engine = NerOnlyNlpEngine(
+        models=[{"lang_code": "en", "model_name": spacy_model}],
+        ner_model_configuration=NerModelConfiguration(labels_to_ignore=IGNORED_LABELS),
+    )
     return AnalyzerEngine(registry=registry, nlp_engine=nlp_engine, supported_languages=["en"])

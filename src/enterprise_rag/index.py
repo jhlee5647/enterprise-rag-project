@@ -1,11 +1,20 @@
-"""색인기: 문서 표의 본문을 PII 마스킹하고 청크로 잘라 임베딩해 Qdrant(로컬 모드)에 저장한다."""
+"""색인기: 문서 표의 본문을 PII 마스킹하고 청크로 잘라 임베딩해 Qdrant(로컬 모드)에 저장한다.
 
+마스킹은 작업 프로세스 여러 개로 나눠 하고, 결과를 마스킹 결과 파일에 저장해 다음 색인에서 다시
+쓴다. 다시 쓰는 조건은 문서 표 파일의 SHA-256, PII 종류 목록, spaCy 모델 이름, 마스커 버전이 모두
+같을 때다 (설계 기록 11).
+"""
+
+import hashlib
+import json
 import logging
+import multiprocessing
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 from qdrant_client import QdrantClient, models
 
@@ -15,20 +24,30 @@ log = logging.getLogger(__name__)
 
 COLLECTION = "chunks"
 BATCH_SIZE = 64
+# 마스킹 결과 파일의 메타데이터에 다시 쓰는 조건을 적는 키
+CONDITIONS_KEY = b"masking_conditions"
+# 작업 프로세스에 한 번에 넘기는 문서 수. 문서 길이가 고르지 않아 작게 나눈다
+DOCS_PER_TASK = 8
+
+
+class IndexingError(Exception):
+    """색인을 시작할 수 없을 때. 메시지를 그대로 사용자에게 보여 준다."""
 
 
 def index(config: dict[str, Any]) -> None:
     """문서 표를 읽어 색인을 새로 만든다. 이전 색인은 지운다."""
     cfg = config["index"]
+    workers = config["pii"]["workers"]
+    if not isinstance(workers, int) or workers < 1:
+        raise IndexingError(f"pii.workers(마스킹 작업 프로세스 수)는 1 이상이어야 한다: {workers}")
     embedder = embedding.load_embedder(config)
-    masker = mask.load_masker(config)
     documents = pq.read_table(config["paths"]["documents"]).to_pylist()
+    masked = masked_documents(config, documents)
 
     payloads = []
-    for doc in documents:
-        title = masker.mask(doc["title"])
+    for doc, (title, body) in zip(documents, masked, strict=True):
         for number, text in enumerate(
-            chunk(masker.mask(doc["text"]), embedder, cfg["chunk_size"], cfg["chunk_overlap"])
+            chunk(body, embedder, cfg["chunk_size"], cfg["chunk_overlap"])
         ):
             payload = {
                 "departments": doc["departments"],
@@ -58,6 +77,75 @@ def index(config: dict[str, Any]) -> None:
                 ],
             )
     log.info("문서 %d개, 청크 %d개를 색인했다", len(documents), len(payloads))
+
+
+def masked_documents(
+    config: dict[str, Any], documents: list[dict[str, Any]]
+) -> list[tuple[str, str]]:
+    """문서마다 마스킹한 (제목, 본문)을 문서 표 순서대로 돌려준다.
+
+    조건이 같은 마스킹 결과 파일이 있으면 그것을 쓰고, 없거나 조건이 다르면 다시 마스킹해 덮어쓴다.
+    """
+    path = config["paths"]["masked"]
+    conditions = masking_conditions(config)
+    if path.exists():
+        saved = pq.read_table(path)
+        meta = saved.schema.metadata or {}
+        if json.loads(meta.get(CONDITIONS_KEY, b"null")) == conditions:
+            log.info("저장된 마스킹 결과를 썼다: 문서 %d건 (%s)", saved.num_rows, path)
+            return list(zip(saved["title"].to_pylist(), saved["text"].to_pylist(), strict=True))
+
+    workers = config["pii"]["workers"]
+    pairs = [(d["title"], d["text"]) for d in documents]
+    pii = config["pii"]
+    if workers == 1:
+        _start_worker(pii["spacy_model"], pii["types"])
+        masked = [_mask_pair(p) for p in pairs]
+    else:
+        # 부모 프로세스가 불러 둔 임베딩 모델(GPU)을 물려받지 않도록 새로 띄운다
+        context = multiprocessing.get_context("spawn")
+        with context.Pool(
+            workers, initializer=_start_worker, initargs=(pii["spacy_model"], pii["types"])
+        ) as pool:
+            masked = pool.map(_mask_pair, pairs, chunksize=DOCS_PER_TASK)
+    table = pa.table(
+        {
+            "doc_id": [d["doc_id"] for d in documents],
+            "title": [t for t, _ in masked],
+            "text": [b for _, b in masked],
+        }
+    )
+    pq.write_table(table.replace_schema_metadata({CONDITIONS_KEY: json.dumps(conditions)}), path)
+    log.info("문서 %d건을 마스킹했다 (작업 프로세스 %d개, %s에 저장)", len(masked), workers, path)
+    return masked
+
+
+def masking_conditions(config: dict[str, Any]) -> dict[str, Any]:
+    """마스킹 결과를 다시 쓰는 조건 네 가지."""
+    digest = hashlib.sha256()
+    with open(config["paths"]["documents"], "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return {
+        "documents_sha256": digest.hexdigest(),
+        "pii_types": config["pii"]["types"],
+        "spacy_model": config["pii"]["spacy_model"],
+        "masker_version": mask.VERSION,
+    }
+
+
+_masker: mask.Masker | None = None
+
+
+def _start_worker(spacy_model: str, types: list[str]) -> None:
+    """작업 프로세스마다 마스커를 한 번 불러 둔다."""
+    global _masker
+    _masker = mask.Masker(spacy_model, types)
+
+
+def _mask_pair(pair: tuple[str, str]) -> tuple[str, str]:
+    title, text = pair
+    return _masker.mask(title), _masker.mask(text)
 
 
 def chunk(text: str, embedder: embedding.Embedder, size: int, overlap: int) -> list[str]:
