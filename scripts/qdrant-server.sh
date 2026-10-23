@@ -23,7 +23,7 @@ install() {
   mkdir -p "$HOME_DIR/bin"
   echo "Qdrant $VERSION 내려받는 중"
   curl -fsSL "https://github.com/qdrant/qdrant/releases/download/$VERSION/qdrant-x86_64-unknown-linux-musl.tar.gz" \
-    | tar -xz -C "$HOME_DIR/bin" qdrant
+    | tar -xz --no-same-owner -C "$HOME_DIR/bin" qdrant
 }
 
 case ${1:-} in
