@@ -42,19 +42,29 @@ HOP_PREFIX = re.compile(r"\A<\d+-hop>\n\n")
 
 
 def gen_eval(config: dict[str, Any]) -> Path:
-    """부서마다 질문을 만들어 config의 평가셋 경로에 쓰고 그 경로를 돌려준다. `keep`은 비워 둔다.
+    """평가셋 초안(`make_eval_set`)과 PII 정답셋 초안(`extend_pii_answers`)을 함께 만들고 평가셋
+    경로를 돌려준다.
 
-    PII 정답셋 초안도 config의 PII 정답셋 경로에 쓴다. 두 파일 중 하나라도 이미 있으면 사람이
-    고친 내용을 지우지 않도록 생성하기 전에 멈춘다. PII 정답셋만 늘릴 때는 `extend_pii_answers`.
+    두 파일 중 하나라도 이미 있으면 사람이 고친 내용을 지우지 않도록 생성하기 전에 멈춘다.
     """
-    path = config["paths"]["eval_set"]
-    if path.exists():
-        raise GenEvalError(f"평가셋 파일이 이미 있다: {path} (지우거나 옮긴 뒤 다시 실행한다)")
+    _refuse_existing_eval_set(config["paths"]["eval_set"])
     pii_path = config["paths"]["pii_answers"]
     if pii_path.exists():
         raise GenEvalError(
             f"PII 정답셋 파일이 이미 있다: {pii_path} (지우거나 옮긴 뒤 다시 실행한다)"
         )
+    path = make_eval_set(config)
+    extend_pii_answers(config)
+    return path
+
+
+def make_eval_set(config: dict[str, Any]) -> Path:
+    """부서마다 질문을 만들어 config의 평가셋 경로에 쓰고 그 경로를 돌려준다. `keep`은 비워 둔다.
+
+    PII 정답셋은 만들지도 건드리지도 않는다. 평가셋 파일이 이미 있으면 생성하기 전에 멈춘다.
+    """
+    path = config["paths"]["eval_set"]
+    _refuse_existing_eval_set(path)
     cfg = config["gen_eval"]
     rows = []
     for department in departments(config["collect"]["departments"]):
@@ -83,8 +93,13 @@ def gen_eval(config: dict[str, Any]) -> Path:
         writer.writeheader()
         writer.writerows(rows)
     log.info("질문 %d개를 %s에 썼다", len(rows), path)
-    extend_pii_answers(config)
     return path
+
+
+def _refuse_existing_eval_set(eval_set: Path) -> None:
+    """검수한 평가셋을 지우지 않도록, 평가셋 파일이 이미 있으면 멈춘다."""
+    if eval_set.exists():
+        raise GenEvalError(f"평가셋 파일이 이미 있다: {eval_set} (지우거나 옮긴 뒤 다시 실행한다)")
 
 
 def extend_pii_answers(config: dict[str, Any]) -> Path:
