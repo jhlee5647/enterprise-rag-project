@@ -1,17 +1,42 @@
 """PII 마스커: 실명(NER), 이메일·전화번호(정규식)를 찾아 가명 토큰으로 바꾼다. 색인 전에 쓴다."""
 
+import re
 from functools import cache
 from typing import Any, NamedTuple
 
-from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer, RecognizerRegistry
+from presidio_analyzer import (
+    AnalyzerEngine,
+    Pattern,
+    PatternRecognizer,
+    RecognizerRegistry,
+    RecognizerResult,
+)
 from presidio_analyzer.nlp_engine import SpacyNlpEngine
 from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 
-EMAIL = r"(?<![\w.%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b"
+# `@` 자리에 OCR로 깨진 `©`, `(c)`, `(c~`도 받는다: support©juulvapor.com
+EMAIL = (
+    r"(?<![\w.%+-])[A-Za-z0-9._%+-]+(?:@|©|\(c\)|\(c~)"
+    r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b"
+)
 # 북미 번호: 415-555-0134, (415) 555-0134, 415.555.0134, +1 415 555 0134
 PHONE = r"(?<![\w+])(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\w)"
+# 논문 저자 표기: 성(하이픈 허용) + 머리글자 1~2개 + `,` `.` `;`. 예: Severson HH, Hartmann-Boyce J,
+# 머리글자가 로마 숫자(I, V, X)뿐이면 임상 단계 표기(Phase II,)로 보고 빼놓는다.
+AUTHOR = r"(?<![\w-])[A-Z][a-z]+(?:-[A-Z][a-z]+)* (?![IVX]{1,2}[,.;])[A-Z]{1,2}(?=[,.;])"
+
+# spaCy가 찾은 이름 후보를 나누는 자리(줄바꿈, ` and `)와, 이름 뒤에 붙은 문장의 시작(`. ` + 대문자)
+NAME_SEPARATOR = re.compile(r"\s*\n\s*| and ")
+SENTENCE_AFTER_NAME = re.compile(r"\.\s[A-Z]")
+# 이 중 하나라도 맞는 이름 후보는 OCR 잡음으로 보고 버린다
+NOT_NAME = [
+    re.compile(r"[^A-Za-zÀ-ÖØ-öø-ÿ0-9\s.'-]"),  # 라틴 문자, 숫자, 공백, `.` `-` `'` 외의 글자
+    re.compile(r"^(?!.*[^\W\d_]{2})", re.DOTALL),  # 알파벳 2글자 이상인 단어가 없음
+    re.compile(r"([^\W\d_]{2,3})\1{2,}"),  # 같은 2~3글자가 3번 이상 연달아 반복됨
+    re.compile(r"^(?!.*(?<!\w)[A-Z])", re.DOTALL),  # 대문자로 시작하는 단어가 없음
+]
 
 
 class PiiType(NamedTuple):
@@ -68,11 +93,61 @@ def load_masker(config: dict[str, Any]) -> Masker:
     return Masker(config["pii"]["spacy_model"], config["pii"]["types"])
 
 
+class NameRecognizer(SpacyRecognizer):
+    """spaCy가 PERSON으로 찾은 이름 후보의 경계를 고치고, OCR 잡음인 후보를 버린다."""
+
+    def analyze(self, text, entities, nlp_artifacts=None):
+        return [
+            piece
+            for found in super().analyze(text, entities, nlp_artifacts)
+            for piece in _name_pieces(text, found)
+        ]
+
+
+def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
+    """이름 후보를 줄바꿈과 ` and `에서 나누고, 조각마다 `. ` 뒤 문장을 잘라 낸 뒤 잡음이 아닌
+    조각만 돌려준다. 예: `Robert\\nKrulik` → `Robert`, `Krulik`
+    """
+    candidate = text[found.start : found.end]
+    spans, start = [], 0
+    for separator in NAME_SEPARATOR.finditer(candidate):
+        spans.append((start, separator.start()))
+        start = separator.end()
+    spans.append((start, len(candidate)))
+
+    pieces = []
+    for start, end in spans:
+        if sentence := SENTENCE_AFTER_NAME.search(candidate, start, end):
+            end = sentence.start()
+        name = candidate[start:end].strip()
+        if not name or any(rule.search(name) for rule in NOT_NAME):
+            continue
+        begin = found.start + candidate.index(name, start)
+        pieces.append(
+            RecognizerResult(
+                found.entity_type,
+                begin,
+                begin + len(name),
+                found.score,
+                found.analysis_explanation,
+                found.recognition_metadata,
+            )
+        )
+    return pieces
+
+
 @cache
 def _analyzer(spacy_model: str) -> AnalyzerEngine:
     """spaCy 모델은 불러오는 데 몇 초 걸리므로 모델마다 한 번만 만든다."""
     registry = RecognizerRegistry(supported_languages=["en"])
-    registry.add_recognizer(SpacyRecognizer(supported_entities=["PERSON"]))
+    registry.add_recognizer(NameRecognizer(supported_entities=["PERSON"]))
+    # 저자 표기는 대소문자로 판정하므로 Presidio 기본값(IGNORECASE)을 끈다
+    author = Pattern("author", AUTHOR, 1.0)
+    registry.add_recognizer(
+        PatternRecognizer(
+            "PERSON", name="AuthorRecognizer", patterns=[author], global_regex_flags=0
+        )
+    )
     registry.add_recognizer(PatternRecognizer("EMAIL", patterns=[Pattern("email", EMAIL, 1.0)]))
     registry.add_recognizer(PatternRecognizer("PHONE", patterns=[Pattern("phone", PHONE, 1.0)]))
     nlp_engine = SpacyNlpEngine(models=[{"lang_code": "en", "model_name": spacy_model}])

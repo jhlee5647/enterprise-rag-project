@@ -121,3 +121,26 @@ def test_extra_unreadable_pii_entry_stops_eval_with_row_number(pipeline, capsys)
 
     assert code == 2
     assert "3행" in capsys.readouterr().err
+
+
+# 아래는 티켓 #19 Acceptance criteria의 사례다.
+
+
+def test_t13_pii_metrics_count_only_test_chunks(pipeline):
+    rows = [{**r, "split": "test"} for r in answers()[:2]]
+    # 개발용 K3: 마스커가 가리지 않는 FDA를 정답으로 적었다. 셈에 넣으면 1 ÷ 4 = 0.25
+    rows.append({**answers()[2], "pii": "NAME: FDA", "split": "dev"})
+
+    run = pipeline.eval([], "t13", pii_answers=rows)
+
+    # 측정용 정답 3개가 모두 가려진다: 0 ÷ 3
+    assert run.metrics["pii_miss_rate"] == 0.0
+
+
+def test_t14_answers_without_split_column_count_every_chunk(pipeline):
+    pipeline.write_pii_answers(answers())  # split 열이 없는 #7 정답셋
+
+    run = pipeline.eval([], "t14")
+
+    assert run.metrics["pii_miss_rate"] == 0.0
+    assert run.metrics["pii_false_positive_rate"] == 0.0
