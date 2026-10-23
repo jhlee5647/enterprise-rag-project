@@ -24,7 +24,10 @@ from enterprise_rag import embedding, mask
 log = logging.getLogger(__name__)
 
 COLLECTION = "chunks"
-BATCH_SIZE = 64
+# 이만큼씩 임베딩하고, 그 벡터를 `UPSERT_BATCH`개씩 저장한다. 저장하는 동안 GPU가 덜 쉬게 크게
+# 묶는다 (`docs/design/issue8-followup.md` 13절)
+EMBED_BATCH = 8192
+UPSERT_BATCH = 1024
 # 마스킹 결과 파일의 메타데이터에 다시 쓰는 조건을 적는 키
 CONDITIONS_KEY = b"masking_conditions"
 # 작업 프로세스에 한 번에 넘기는 문서 수. 문서 길이가 고르지 않아 작게 나눈다
@@ -43,6 +46,10 @@ def index(config: dict[str, Any]) -> None:
         raise IndexingError(f"pii.workers(마스킹 작업 프로세스 수)는 1 이상이어야 한다: {workers}")
     # 작업 프로세스 안에서 실패하면 원인이 가려지므로, 띄우기 전에 여기서 알린다
     mask.check_types(config["pii"]["types"])
+    try:
+        embedding.check_dtype(config["embedding"]["dtype"])
+    except ValueError as e:
+        raise IndexingError(str(e)) from None
     embedder = embedding.load_embedder(config)
     documents = pq.read_table(config["paths"]["documents"]).to_pylist()
     masked_pairs = masked_documents(config, documents)
@@ -69,16 +76,15 @@ def index(config: dict[str, Any]) -> None:
             COLLECTION,
             vectors_config=models.VectorParams(size=embedder.dim, distance=models.Distance.COSINE),
         )
-        for start in range(0, len(payloads), BATCH_SIZE):
-            batch = payloads[start : start + BATCH_SIZE]
+        for start in range(0, len(payloads), EMBED_BATCH):
+            batch = payloads[start : start + EMBED_BATCH]
             vectors = embedder.embed_documents([p["text"] for p in batch])
-            client.upsert(
-                COLLECTION,
-                [
-                    models.PointStruct(id=start + i, vector=v, payload=p)
-                    for i, (v, p) in enumerate(zip(vectors, batch, strict=True))
-                ],
-            )
+            points = [
+                models.PointStruct(id=start + i, vector=v, payload=p)
+                for i, (v, p) in enumerate(zip(vectors, batch, strict=True))
+            ]
+            for offset in range(0, len(points), UPSERT_BATCH):
+                client.upsert(COLLECTION, points[offset : offset + UPSERT_BATCH])
     log.info("문서 %d개, 청크 %d개를 색인했다", len(documents), len(payloads))
 
 
