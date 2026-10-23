@@ -75,7 +75,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
             record["hit_rate"] = metrics.hit_rate(record)
             records.append(record)
 
-    pii_chunks = mask_pii_answers(config, pii_answers or [])
+    pii_chunks = mask_pii_answers(config, measured_chunks(pii_answers or []))
 
     folder.mkdir(parents=True)
     shutil.copyfile(config_path, folder / "config.yaml")
@@ -101,6 +101,13 @@ def load_eval_set(path: Path) -> list[dict[str, Any]]:
     for r in rows:
         r["doc_ids"] = [i.strip() for i in r["doc_ids"].split(DOC_ID_SEPARATOR) if i.strip()]
     return rows
+
+
+def measured_chunks(answers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """PII 지표를 낼 청크: 개발용·측정용 표시가 있으면 측정용(test)만, 없으면(#7 정답셋) 전부."""
+    if not any(r.get("split") for r in answers):
+        return answers
+    return [r for r in answers if r.get("split") == "test"]
 
 
 def mask_pii_answers(config: dict[str, Any], answers: list[dict[str, Any]]) -> list[dict[str, Any]]:

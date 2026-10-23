@@ -23,3 +23,5 @@
 | pnot0001 | presentation | `Marketing` | .ocr | PII 마스킹 문서 P (제목·본문에 실명, 이메일, 전화번호) |
 | jdoe0001 | email | `Government & Public Affairs` | .ocr | `@juullabs.com` 이메일 마스킹 |
 | fdar0001 | document | `Product Design & Quality` | .ocr | PII 없는 본문은 그대로 (기관명 FDA) |
+| mska0001~mska0011 | document | `Product Design & Quality` | .ocr | 마스커 사례 #19 T1~T11 (본문은 사례 문장 하나, 끝 줄바꿈 없음) |
+| mskx0001 | document | `Product Design & Quality` | .ocr | 마스커 #19 추가 사례 (라틴 확장 문자 이름) |
