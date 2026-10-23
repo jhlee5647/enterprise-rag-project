@@ -22,9 +22,9 @@ from presidio_anonymizer.entities import OperatorConfig
 # spaCy·Presidio 버전 올리기
 VERSION = 1
 
-# spaCy에서 불러올 단계. en_core_web_lg의 `ner`은 자기 안에 tok2vec을 따로 갖고 있어 공용
-# `tok2vec` 단계 없이도 결과가 같다(공용 `tok2vec`은 `tagger`, `parser`만 쓴다)
-SPACY_PIPES = ["ner"]
+# spaCy에서 불러올 단계. `ner`은 개체가 문장 경계를 넘지 않게 하므로, 문장 경계를 정하는
+# `parser`(와 그 입력인 `tok2vec`)가 없으면 결과가 달라진다. 나머지 단계는 결과와 상관없다
+SPACY_PIPES = ["tok2vec", "parser", "ner"]
 # spaCy가 찾는 PERSON 외 개체. 가리지 않으므로 Presidio가 개체마다 찍는 경고를 끈다
 IGNORED_LABELS = [
     "CARDINAL", "DATE", "EVENT", "FAC", "GPE", "LANGUAGE", "LAW", "LOC", "MONEY",
