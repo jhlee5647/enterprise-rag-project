@@ -43,13 +43,12 @@ def test_t01_extending_keeps_confirmed_rows_and_edited_pii(six_chunks):
 
 def test_t02_extending_leaves_eval_set_untouched(six_chunks):
     draft_then_edit_first_row(six_chunks)
-    eval_set = six_chunks.config["paths"]["eval_set"]
-    with open(eval_set, "w") as f:
-        f.write("검수본")
+    eval_set = Path(six_chunks.config["paths"]["eval_set"])
+    eval_set.write_text("검수본")
 
     six_chunks.gen_eval(pii_only=True, pii_chunks=5)
 
-    assert open(eval_set).read() == "검수본"
+    assert eval_set.read_text() == "검수본"
 
 
 def test_t03_six_chunks_are_split_in_half_reproducibly(six_chunks):
@@ -96,7 +95,7 @@ def test_t06_fewer_chunks_than_rows_is_refused(six_chunks, capsys):
 
     code = six_chunks.gen_eval(pii_only=True, pii_chunks=2, expect_code=2)
 
-    assert code != 0
+    assert code == 2
     err = capsys.readouterr().err
     assert "5행" in err
     assert "2개" in err
@@ -114,7 +113,7 @@ def test_t07_changed_chunk_text_is_refused_with_doc_id(six_chunks, capsys):
 
     code = six_chunks.gen_eval(pii_only=True, pii_chunks=6, expect_code=2)
 
-    assert code != 0
+    assert code == 2
     err = capsys.readouterr().err
     for r in rows:
         assert r["doc_id"] in err

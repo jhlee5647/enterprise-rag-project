@@ -11,7 +11,7 @@ from enterprise_rag.collect import collect
 from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
 from enterprise_rag.evaluate import EvalError, evaluate
-from enterprise_rag.gen_eval import GenEvalError, gen_eval
+from enterprise_rag.gen_eval import GenEvalError, extend_pii_answers, gen_eval
 from enterprise_rag.index import index
 
 COMMANDS = {
@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "gen-eval":
         try:
-            gen_eval(load_config(args.config), args.pii_only)
+            (extend_pii_answers if args.pii_only else gen_eval)(load_config(args.config))
         except GenEvalError as e:
             print(e, file=sys.stderr)
             return 2
