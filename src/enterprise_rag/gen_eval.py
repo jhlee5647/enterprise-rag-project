@@ -39,6 +39,8 @@ QUESTION_TYPES = {
 }
 # RAGAS는 다중 홉 질문의 근거 청크 앞에 `<1-hop>` 같은 머리말과 빈 줄을 붙인다
 HOP_PREFIX = re.compile(r"\A<\d+-hop>\n\n")
+# 요약 단계에서 vLLM에 한꺼번에 보내는 요청 수
+SUMMARY_REQUESTS = 16
 
 
 def gen_eval(config: dict[str, Any]) -> Path:
@@ -257,9 +259,11 @@ def department_chunks(config: dict[str, Any], department: str) -> list[dict[str,
 def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dict[str, Any]]:
     """RAGAS로 청크에서 질문 최대 `size`개를 만들어 `Testset.to_list()`의 행 모양으로 돌려준다.
 
-    LLM은 `ask`와 같은 localhost vLLM, 임베딩도 `ask`와 같은 모델이다(ADR-0002).
+    LLM은 생성 LLM(`gen_eval.llm`, 없으면 `ask`의 답변 LLM)이고, 임베딩은 `ask`와 같은 모델이다.
+    둘 다 Pod 안의 로컬 모델이다(ADR-0002).
     작은 로컬 모델은 RAGAS가 요구하는 JSON 형식을 자주 틀리므로, 질문 하나가 실패하면 그 질문만
-    버리고, 한 유형 전체가 실패하면(예: 엮을 청크가 없는 다중 홉) 그 유형만 건너뛴다.
+    버리고, 한 유형 전체가 실패하면(예: 엮을 청크가 없는 다중 홉) 그 유형만 건너뛴다. 요약을 만들지
+    못한 청크는 지식 그래프에서 뺀다(`summarized_nodes`).
     테스트는 이 함수를 RAGAS 출력과 같은 모양의 가짜로 바꾼다.
     """
     # RAGAS는 무겁고 LangChain 경고를 많이 내서 쓸 때만 불러온다
@@ -276,11 +280,14 @@ def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dic
     )
     from ragas.testset.transforms import apply_transforms, default_transforms_for_prechunked
 
+    gen = config["gen_eval"].get("llm") or config["llm"]
     llm = LangchainLLMWrapper(
         ChatOpenAI(
-            model=config["llm"]["model"],
-            base_url=config["llm"]["base_url"],
+            model=gen["model"],
+            base_url=gen["base_url"],
             api_key="EMPTY",  # vLLM은 키를 보지 않는다
+            # 같은 말을 되풀이하는 출력이 문맥 길이까지 가지 않게 한다. 넘으면 그 요청은 실패한다
+            max_tokens=gen.get("max_tokens"),
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             # RAGAS는 단계마다 새 이벤트 루프를 만든다. 이전 루프에서 연 연결을 다시 쓰면
             # Connection error가 나므로 연결을 재사용하지 않는다(localhost라 비용이 작다).
@@ -290,13 +297,17 @@ def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dic
         )
     )
     embeddings = LangchainEmbeddingsWrapper(_LangchainEmbeddings(embedding.load_embedder(config)))
-    kg = KnowledgeGraph(
-        nodes=[
-            Node(type=NodeType.CHUNK, properties={"page_content": c, "document_metadata": {}})
-            for c in chunks
-        ]
-    )
-    apply_transforms(kg, default_transforms_for_prechunked(llm=llm, embedding_model=embeddings))
+    nodes = [
+        Node(type=NodeType.CHUNK, properties={"page_content": c, "document_metadata": {}})
+        for c in chunks
+    ]
+    summary, *transforms = default_transforms_for_prechunked(llm=llm, embedding_model=embeddings)
+    kept = summarized_nodes(summary, nodes)
+    if not kept:
+        log.warning("요약이 남은 청크가 없어 질문을 만들지 않는다")
+        return []
+    kg = KnowledgeGraph(nodes=kept)
+    apply_transforms(kg, transforms)
     generator = TestsetGenerator(llm=llm, embedding_model=embeddings, knowledge_graph=kg)
 
     synthesizers = {
@@ -325,6 +336,41 @@ def synthesize(config: dict[str, Any], chunks: list[str], size: int) -> list[dic
             {**s.model_dump(exclude_none=True), "synthesizer_name": synthesizer.name} for s in made
         ]
     return samples
+
+
+def summarized_nodes(summary: Any, nodes: list[Any]) -> list[Any]:
+    """RAGAS의 요약 단계를 청크마다 따로 돌려, 요약을 붙인 노드만 돌려준다.
+
+    RAGAS는 요청 하나만 실패해도 변환 전체를 멈춘다. 예: `0 0`만 수십 줄인 표 청크에서 모델이
+    요약 대신 입력을 따라 쓰다 출력 길이 상한에 걸린다. 다음 단계(요약 임베딩, 노드 거르기, 청크
+    사이 유사도)가 모두 요약을 쓰므로, 요약에 실패한 청크는 빼고 남긴다.
+    """
+    import asyncio
+
+    limit = asyncio.Semaphore(SUMMARY_REQUESTS)
+
+    async def one(node: Any) -> Exception | None:
+        async with limit:
+            try:
+                name, value = await summary.extract(node)
+            except Exception as e:  # 형식 오류, 길이 상한 등 RAGAS가 내는 오류는 여러 가지다
+                return e
+        node.add_property(name, value)
+        return None
+
+    async def run() -> list[Exception | None]:
+        return await asyncio.gather(*(one(n) for n in nodes))
+
+    errors = asyncio.run(run())
+    failed = [e for e in errors if e is not None]
+    if failed:
+        log.warning(
+            "요약을 만들지 못한 청크 %d개를 뺐다 (청크 %d개 중, 첫 오류: %r)",
+            len(failed),
+            len(nodes),
+            failed[0],
+        )
+    return [n for n, e in zip(nodes, errors, strict=True) if e is None]
 
 
 def split(size: int, shares: dict[str, float]) -> dict[str, int]:
