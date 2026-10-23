@@ -16,24 +16,43 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
 
 
-def load_embedder(config: dict[str, Any]) -> Embedder:
-    """config의 임베딩 모델을 불러온다. 테스트는 이 함수를 가짜 임베딩으로 바꾼다.
+# 임베딩 모델을 불러올 정밀도. 문서와 질문 모두 이 정밀도로 임베딩한다
+DTYPES = ["bfloat16", "float32"]
 
-    같은 모델은 한 번만 불러온다. `eval`이 질문·부서마다 `ask`를 부르기 때문이다.
+
+def load_embedder(config: dict[str, Any]) -> Embedder:
+    """config의 임베딩 모델을 config의 정밀도(`embedding.dtype`)로 불러온다.
+
+    정밀도가 `DTYPES`에 없으면 ValueError.
     """
-    return _load_sentence_transformer(config["embedding"]["model"])
+    dtype = config["embedding"]["dtype"]
+    check_dtype(dtype)
+    return load_model(config["embedding"]["model"], dtype)
+
+
+def check_dtype(dtype: str) -> None:
+    """정밀도가 `DTYPES`에 없으면 ValueError."""
+    if dtype not in DTYPES:
+        raise ValueError(
+            f"embedding.dtype(임베딩 정밀도)는 {', '.join(DTYPES)} 중 하나여야 한다: {dtype}"
+        )
 
 
 @cache
-def _load_sentence_transformer(model: str) -> "SentenceTransformerEmbedder":
-    return SentenceTransformerEmbedder(model)
+def load_model(model: str, dtype: str) -> "SentenceTransformerEmbedder":
+    """임베딩 모델을 불러온다. 테스트는 이 함수를 가짜 임베딩으로 바꾼다.
+
+    같은 모델은 한 번만 불러온다. `eval`이 질문·부서마다 `ask`를 부르기 때문이다.
+    """
+    return SentenceTransformerEmbedder(model, dtype)
 
 
 class SentenceTransformerEmbedder:
-    def __init__(self, model: str):
-        from sentence_transformers import SentenceTransformer  # 무거워서 쓸 때만 불러온다
+    def __init__(self, model: str, dtype: str):
+        import torch  # 무거워서 쓸 때만 불러온다
+        from sentence_transformers import SentenceTransformer
 
-        self._model = SentenceTransformer(model)
+        self._model = SentenceTransformer(model, model_kwargs={"dtype": getattr(torch, dtype)})
         self.dim = self._model.get_embedding_dimension()
 
     def token_spans(self, text: str) -> list[tuple[int, int]]:

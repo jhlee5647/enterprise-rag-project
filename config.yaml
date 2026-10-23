@@ -41,6 +41,7 @@ pii:
 
 embedding:
   model: Qwen/Qwen3-Embedding-0.6B   # 앱 프로세스 안에서 실행한다
+  dtype: bfloat16   # 정밀도: bfloat16 또는 float32. 문서와 질문 모두 이 정밀도로 임베딩한다 (`docs/design/issue8-followup.md` 12절)
 
 ask:
   acl_filter: true   # 켜면 질문한 부서가 허용 부서에 없는 청크를 검색 전에 뺀다

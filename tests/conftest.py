@@ -47,7 +47,7 @@ def make_config(out_dir, quota=2, seed=42, max_body_chars=1_000_000):
         },
         "index": {"chunk_size": 512, "chunk_overlap": 64},
         "pii": {"types": ["NAME", "EMAIL", "PHONE"], "spacy_model": "en_core_web_lg", "workers": 1},
-        "embedding": {"model": "fake-embedding"},
+        "embedding": {"model": "fake-embedding", "dtype": "bfloat16"},
         "ask": {"acl_filter": True, "retrieval": "dense", "reranker": "none", "top_k": 5},
         "llm": {"model": "fake-llm", "base_url": "http://127.0.0.1:9/v1", "max_tokens": 1024},
         "gen_eval": {
@@ -156,8 +156,10 @@ class EvalRun:
 class Pipeline:
     """`collect`를 마친 config로 `index`와 `ask`를 실행한다. 부르면 `ask`를 실행한다."""
 
-    def __init__(self, config_path, config, vllm, capsys):
+    def __init__(self, config_path, config, vllm, capsys, embedder_loads):
         self.config_path, self.config, self.vllm, self.capsys = config_path, config, vllm, capsys
+        # 임베딩 모델을 불러올 때마다 받은 정밀도, 불린 순서대로
+        self.embedder_loads = embedder_loads
 
     def index(self, pii_types=None):
         if pii_types is not None:
@@ -260,9 +262,15 @@ class Pipeline:
 def make_pipeline(run_collect, tmp_path, monkeypatch, capsys):
     """fixture 칸으로 `collect` → `index`를 실행하고, `ask`를 부르는 `Pipeline`을 돌려준다.
 
-    임베딩은 가짜로 바꾸고, LLM은 가짜 vLLM 서버로 보낸다. NER은 실제 spaCy 모델을 쓴다.
+    임베딩 모델은 가짜로 바꾸고, LLM은 가짜 vLLM 서버로 보낸다. NER은 실제 spaCy 모델을 쓴다.
     """
-    monkeypatch.setattr(embedding, "load_embedder", lambda config: FakeEmbedder())
+    embedder_loads = []
+
+    def load_model(model, dtype):
+        embedder_loads.append(dtype)
+        return FakeEmbedder()
+
+    monkeypatch.setattr(embedding, "load_model", load_model)
     with FakeVLLM() as vllm:
 
         def make(cells):
@@ -270,7 +278,7 @@ def make_pipeline(run_collect, tmp_path, monkeypatch, capsys):
             config_path = tmp_path / "out.yaml"
             config = yaml.safe_load(config_path.read_text())
             config["llm"]["base_url"] = vllm.base_url
-            pipeline = Pipeline(config_path, config, vllm, capsys)
+            pipeline = Pipeline(config_path, config, vllm, capsys, embedder_loads)
             pipeline.index()
             return pipeline
 
