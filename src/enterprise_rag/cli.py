@@ -12,7 +12,7 @@ from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
 from enterprise_rag.evaluate import EvalError, evaluate
 from enterprise_rag.gen_eval import GenEvalError, extend_pii_answers, gen_eval, make_eval_set
-from enterprise_rag.index import index
+from enterprise_rag.index import IndexingError, index
 
 COMMANDS = {
     "collect": "IDL에서 표본을 뽑아 본문을 받고 허용 부서를 계산해 문서 표로 저장한다",
@@ -53,7 +53,11 @@ def main(argv: list[str] | None = None) -> int:
         collect(load_config(args.config))
         return 0
     if args.command == "index":
-        index(load_config(args.config))
+        try:
+            index(load_config(args.config))
+        except IndexingError as e:
+            print(e, file=sys.stderr)
+            return 2
         return 0
     if args.command == "ask":
         config = load_config(args.config)

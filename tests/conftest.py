@@ -24,6 +24,7 @@ def make_config(out_dir, quota=2, seed=42, max_body_chars=1_000_000):
             "eval_set": str(out_dir / "eval_set.csv"),
             "runs": str(out_dir / "runs"),
             "pii_answers": str(out_dir / "pii_answers.csv"),
+            "masked": str(out_dir / "documents.masked.parquet"),
         },
         "collect": {
             "seed": seed,
@@ -45,7 +46,7 @@ def make_config(out_dir, quota=2, seed=42, max_body_chars=1_000_000):
             },
         },
         "index": {"chunk_size": 512, "chunk_overlap": 64},
-        "pii": {"types": ["NAME", "EMAIL", "PHONE"], "spacy_model": "en_core_web_lg"},
+        "pii": {"types": ["NAME", "EMAIL", "PHONE"], "spacy_model": "en_core_web_lg", "workers": 1},
         "embedding": {"model": "fake-embedding"},
         "ask": {"acl_filter": True, "retrieval": "dense", "reranker": "none", "top_k": 5},
         "llm": {"model": "fake-llm", "base_url": "http://127.0.0.1:9/v1", "max_tokens": 1024},

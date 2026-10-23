@@ -4,6 +4,7 @@ import re
 from functools import cache
 from typing import Any, NamedTuple
 
+import spacy
 from presidio_analyzer import (
     AnalyzerEngine,
     Pattern,
@@ -11,10 +12,24 @@ from presidio_analyzer import (
     RecognizerRegistry,
     RecognizerResult,
 )
-from presidio_analyzer.nlp_engine import NlpArtifacts, SpacyNlpEngine
+from presidio_analyzer.nlp_engine import NerModelConfiguration, NlpArtifacts, SpacyNlpEngine
 from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
+
+# 마스커 버전: 마스킹 결과가 바뀔 수 있는 변경을 할 때 올린다. 바뀌면 `index`가 저장된 마스킹
+# 결과를 쓰지 않는다. 예: 정규식(EMAIL, PHONE, AUTHOR), 이름 후보 규칙, 불러올 spaCy 단계,
+# spaCy·Presidio 버전 올리기
+VERSION = 1
+
+# spaCy에서 불러올 단계. `ner`은 개체가 문장 경계를 넘지 않게 하므로, 문장 경계를 정하는
+# `parser`(와 그 입력인 `tok2vec`)가 없으면 결과가 달라진다. 나머지 단계는 결과와 상관없다
+SPACY_PIPES = ["tok2vec", "parser", "ner"]
+# spaCy가 찾는 PERSON 외 개체. 가리지 않으므로 Presidio가 개체마다 찍는 경고를 끈다
+IGNORED_LABELS = [
+    "CARDINAL", "DATE", "EVENT", "FAC", "GPE", "LANGUAGE", "LAW", "LOC", "MONEY",
+    "NORP", "ORDINAL", "ORG", "PERCENT", "PRODUCT", "QUANTITY", "TIME", "WORK_OF_ART",
+]  # fmt: skip
 
 # `@` 자리에 OCR로 깨진 `©`, `(c)`, `(c~`도 받는다: support©juulvapor.com
 EMAIL = (
@@ -57,9 +72,7 @@ NAMES = {t.entity: name for name, t in TYPES.items()}
 
 class Masker:
     def __init__(self, spacy_model: str, types: list[str]):
-        unknown = [t for t in types if t not in TYPES]
-        if unknown:
-            raise ValueError(f"알 수 없는 PII 종류: {unknown} (쓸 수 있는 종류: {list(TYPES)})")
+        check_types(types)
         self._analyzer = _analyzer(spacy_model)
         self._anonymizer = AnonymizerEngine()
         # PII 종류 목록에 있는 것만 찾는다. 목록이 비면 아무것도 바꾸지 않는다.
@@ -87,6 +100,13 @@ class Masker:
         found = self._analyzer.analyze(text, language="en", entities=self._entities)
         kept = self._anonymizer.anonymize(text, found, {"DEFAULT": OperatorConfig("keep")})
         return [(NAMES[i.entity_type], i.text) for i in sorted(kept.items, key=lambda i: i.start)]
+
+
+def check_types(types: list[str]) -> None:
+    """PII 종류 목록에 모르는 종류가 있으면 ValueError."""
+    unknown = [t for t in types if t not in TYPES]
+    if unknown:
+        raise ValueError(f"알 수 없는 PII 종류: {unknown} (쓸 수 있는 종류: {list(TYPES)})")
 
 
 def load_masker(config: dict[str, Any]) -> Masker:
@@ -139,6 +159,19 @@ def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
     return pieces
 
 
+class NerOnlyNlpEngine(SpacyNlpEngine):
+    """spaCy 모델에서 `SPACY_PIPES` 단계만 불러온다. 나머지 단계는 메모리에도 올리지 않는다.
+    Presidio의 원래 `load`가 하는 GPU 켜기와 모델 자동 내려받기는 하지 않는다.
+    """
+
+    def load(self) -> None:
+        self.nlp = {}
+        for m in self.models:
+            name = m["model_name"]
+            unused = [c for c in spacy.info(name)["components"] if c not in SPACY_PIPES]
+            self.nlp[m["lang_code"]] = spacy.load(name, exclude=unused)
+
+
 @cache
 def _analyzer(spacy_model: str) -> AnalyzerEngine:
     """spaCy 모델은 불러오는 데 몇 초 걸리므로 모델마다 한 번만 만든다."""
@@ -153,5 +186,8 @@ def _analyzer(spacy_model: str) -> AnalyzerEngine:
     )
     registry.add_recognizer(PatternRecognizer("EMAIL", patterns=[Pattern("email", EMAIL, 1.0)]))
     registry.add_recognizer(PatternRecognizer("PHONE", patterns=[Pattern("phone", PHONE, 1.0)]))
-    nlp_engine = SpacyNlpEngine(models=[{"lang_code": "en", "model_name": spacy_model}])
+    nlp_engine = NerOnlyNlpEngine(
+        models=[{"lang_code": "en", "model_name": spacy_model}],
+        ner_model_configuration=NerModelConfiguration(labels_to_ignore=IGNORED_LABELS),
+    )
     return AnalyzerEngine(registry=registry, nlp_engine=nlp_engine, supported_languages=["en"])
