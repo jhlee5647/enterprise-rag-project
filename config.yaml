@@ -16,6 +16,9 @@ idl:
 collect:
   seed: 42          # Solr sort=random_<seed> asc
   quota: 1000       # 칸(부서 × 문서 종류)마다 뽑을 문서 수
+  # 본문 길이 한도(글자 수). 넘는 문서는 건너뛰고 수집 로그에 남긴다. 표 데이터가 통째로 든
+  # 1억 자짜리 문서가 있어서다. spaCy NER이 한 번에 받는 길이 한도(100만 자)와 맞춘다.
+  max_body_chars: 1000000
   doc_types: [email, document, presentation]
   # JUUL 밖에서 만든 외부 문서 종류. q에 NOT type:(...)으로 붙여 뺀다.
   excluded_types: [publication, article, news, transcript, video, audio]
@@ -46,6 +49,8 @@ ask:
 llm:
   model: Qwen/Qwen3-8B                 # vLLM에 띄운 모델 이름. thinking 모드는 요청마다 끈다
   base_url: http://localhost:8000/v1   # vLLM 서버 (OpenAI 호환 API)
+  # 답변 길이 상한(토큰). 없으면 같은 말을 되풀이하는 답변이 모델 한도까지 이어져 요청 시간 제한을 넘긴다
+  max_tokens: 1024
 
 gen_eval:
   seed: 42                      # 부서마다 생성에 쓸 문서를 고를 때 쓰는 시드

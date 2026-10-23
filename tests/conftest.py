@@ -14,7 +14,7 @@ from tests.fake_idl import FakeIDL
 from tests.fake_models import FakeEmbedder, FakeVLLM
 
 
-def make_config(out_dir, quota=2, seed=42):
+def make_config(out_dir, quota=2, seed=42, max_body_chars=1_000_000):
     return {
         "paths": {
             "documents": str(out_dir / "documents.parquet"),
@@ -28,6 +28,7 @@ def make_config(out_dir, quota=2, seed=42):
         "collect": {
             "seed": seed,
             "quota": quota,
+            "max_body_chars": max_body_chars,
             "doc_types": ["email", "document", "presentation"],
             "excluded_types": [
                 "publication",
@@ -47,7 +48,7 @@ def make_config(out_dir, quota=2, seed=42):
         "pii": {"types": ["NAME", "EMAIL", "PHONE"], "spacy_model": "en_core_web_lg"},
         "embedding": {"model": "fake-embedding"},
         "ask": {"acl_filter": True, "retrieval": "dense", "reranker": "none", "top_k": 5},
-        "llm": {"model": "fake-llm", "base_url": "http://127.0.0.1:9/v1"},
+        "llm": {"model": "fake-llm", "base_url": "http://127.0.0.1:9/v1", "max_tokens": 1024},
         "gen_eval": {
             "seed": 42,
             "docs_per_department": 30,
@@ -81,9 +82,9 @@ class Collected:
 def run_collect(tmp_path):
     """가짜 IDL 서버를 띄우고 config를 써서 `collect`를 실행한다."""
 
-    def run(cells, quota=2, seed=42, out="out"):
+    def run(cells, quota=2, seed=42, out="out", max_body_chars=1_000_000):
         out_dir = tmp_path / out
-        config = make_config(out_dir, quota=quota, seed=seed)
+        config = make_config(out_dir, quota=quota, seed=seed, max_body_chars=max_body_chars)
         with FakeIDL(cells) as idl:
             config["idl"] = {"solr_url": idl.solr_url, "s3_url": idl.s3_url}
             config_path = tmp_path / f"{out}.yaml"

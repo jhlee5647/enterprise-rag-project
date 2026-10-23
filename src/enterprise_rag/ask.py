@@ -74,6 +74,7 @@ def generate(llm: dict[str, Any], question: str, chunks: list[dict[str, Any]]) -
                 {"role": "user", "content": f"Sources:\n{sources}\n\nQuestion: {question}"},
             ],
             "temperature": 0,
+            "max_tokens": llm["max_tokens"],
             "chat_template_kwargs": {"enable_thinking": False},  # Qwen3 thinking 모드를 끈다
         },
         timeout=300,

@@ -73,6 +73,14 @@ def _collect(config: dict[str, Any]) -> None:
                     if text is None:
                         log.warning("%s: 본문 파일(.ocr, .txt)이 없어 건너뛴다", doc["id"])
                         continue
+                    if len(text) > cfg["max_body_chars"]:
+                        log.warning(
+                            "%s: 본문이 %d자로 한도 %d자를 넘어 건너뛴다",
+                            doc["id"],
+                            len(text),
+                            cfg["max_body_chars"],
+                        )
+                        continue
                     rows.append(
                         {
                             "doc_id": doc["id"],
