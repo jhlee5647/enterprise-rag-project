@@ -21,7 +21,7 @@ from spacy.lang.en.stop_words import STOP_WORDS
 # 마스커 버전: 마스킹 결과가 바뀔 수 있는 변경을 할 때 올린다. 바뀌면 `index`가 저장된 마스킹
 # 결과를 쓰지 않는다. 예: 정규식(EMAIL, PHONE, AUTHOR), 이름 후보 규칙, 불러올 spaCy 단계,
 # spaCy·Presidio 버전 올리기
-VERSION = 2  # 2: 가운데 머리글자, 저자 표기, 별명, 날짜·되풀이 잡음 규칙 (#38)
+VERSION = 2
 
 # spaCy에서 불러올 단계. `ner`은 개체가 문장 경계를 넘지 않게 하므로, 문장 경계를 정하는
 # `parser`(와 그 입력인 `tok2vec`)가 없으면 결과가 달라진다. 나머지 단계는 결과와 상관없다
@@ -42,13 +42,13 @@ PHONE = r"(?<![\w+])(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(
 # 따옴표 별명이 낀 이름: 이름 + "별명" + 성. 예: Edmund "Tad" Berger. 곧은·둥근 따옴표 모두 받는다
 NICKNAME = r'(?<![\w-])[A-Z][a-z]+ ["“][A-Z][a-z]+["”] [A-Z][a-z]+(?:-[A-Z][a-z]+)*\b'
 # 저자 표기처럼 보여도 문서 구성 표기(Exhibit A, Appendix B, Cohort C)의 첫 단어이면 이름이 아니다.
-# 9,000건에서 저자 표기 모양에 걸린 첫 단어 중 이름이 될 수 없는 것만 넣는다 (#38)
+# 9,000건에서 저자 표기 모양에 걸린 첫 단어 중 이름이 될 수 없는 것만 넣는다 (#38). 성으로도
+# 쓰이는 단어(Box, Stage, Round, Part, Grade, Batch, Wave)는 넣지 않는다: `Box GE,`는 저자 표기다
 DOCUMENT_WORDS = [
-    "Annex", "Appendix", "Area", "Attachment", "Ave", "Batch", "Box", "Category", "Circle",
-    "Class", "Cohort", "Concept", "Cumulative", "Exhibit", "Figure", "Grade", "Group", "Item",
-    "Level", "Option", "Package", "Pair", "Part", "Phase", "Plan", "Retailer", "Rev", "Room",
-    "Round", "Schedule", "Section", "Series", "Stage", "Step", "Suite", "Tab", "Table", "Tier",
-    "Type", "Version", "Wave", "Zone",
+    "Annex", "Appendix", "Area", "Attachment", "Ave", "Category", "Circle", "Class", "Cohort",
+    "Concept", "Cumulative", "Exhibit", "Figure", "Group", "Item", "Level", "Option", "Package",
+    "Pair", "Phase", "Plan", "Retailer", "Rev", "Room", "Schedule", "Section", "Series", "Step",
+    "Suite", "Tab", "Table", "Tier", "Type", "Version", "Zone",
 ]  # fmt: skip
 # 논문 저자 표기: 성(하이픈, McKeganey 같은 가운데 대문자 허용) + 머리글자 1~2개 + `,` `.` `;`
 # 또는 ` et al`. 예: Severson HH, Hartmann-Boyce J, Hajek P et al.
@@ -173,8 +173,9 @@ def _sentence_after_name(candidate: str, start: int, end: int) -> int | None:
 
 
 def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
-    """이름 후보를 줄바꿈과 ` and `에서 나누고, 조각마다 `. ` 뒤 문장을 잘라 낸 뒤 잡음이 아닌
-    조각만 돌려준다. 예: `Robert\\nKrulik` → `Robert`, `Krulik`
+    """이름 후보를 줄바꿈과 ` and `에서 나누고, 조각마다 이름 뒤에 붙은 문장을 잘라 낸 뒤
+    잡음이 아닌 조각만 돌려준다. 자르는 자리는 `_sentence_after_name`이 정한다.
+    예: `Robert\\nKrulik` → `Robert`, `Krulik`
     """
     candidate = text[found.start : found.end]
     spans, start = [], 0
@@ -185,7 +186,7 @@ def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
 
     pieces = []
     for start, end in spans:
-        if sentence := _sentence_after_name(candidate, start, end):
+        if (sentence := _sentence_after_name(candidate, start, end)) is not None:
             end = sentence
         name = candidate[start:end].strip()
         if not name or any(rule.search(name) for rule in NOT_NAME):

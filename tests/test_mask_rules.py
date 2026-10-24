@@ -1,7 +1,7 @@
 """`collect` → `index`: 마스커가 가운데 머리글자 뒤 성, 저자 표기 빈틈, 따옴표 별명을 가리고,
 문서 구성 표기·날짜·되풀이 잡음은 가리지 않는다.
 
-테스트 이름의 `tNN`은 티켓 #38 Acceptance criteria의 사례 번호다. `extra`는 구현 중 추가한 사례다.
+테스트 이름의 `tNN`은 티켓 #38 Acceptance criteria의 사례 번호다.
 사례마다 그 문장만 본문에 든 fixture 문서(`mskb00NN`, NN은 사례 번호)를 색인해 청크를 읽는다.
 NER은 실제 spaCy 모델을 쓴다.
 """
@@ -66,11 +66,7 @@ def test_t09_repeated_noise_is_left_as_is(make_pipeline):
 
 
 def test_t10_masking_saved_by_masker_version_1_is_not_reused(pipeline, caplog, monkeypatch):
-    # #19 마스커(버전 1)로 저장한 마스킹 결과가 있는 상태에서 지금 마스커로 다시 색인한다
-    current = mask.VERSION
-    monkeypatch.setattr(mask, "VERSION", 1)
-    pipeline.index()
-    monkeypatch.setattr(mask, "VERSION", current)
+    index_with_masker_version_1(pipeline, monkeypatch)
     caplog.set_level("INFO")
     caplog.clear()
 
@@ -79,3 +75,10 @@ def test_t10_masking_saved_by_masker_version_1_is_not_reused(pipeline, caplog, m
     messages = [r.getMessage() for r in caplog.records]
     assert any("마스킹했다" in m for m in messages)
     assert not any("저장된 마스킹 결과를 썼다" in m for m in messages)
+
+
+def index_with_masker_version_1(pipeline, monkeypatch):
+    """#19 마스커(버전 1)로 색인해 마스킹 결과 파일을 남긴다. 끝나면 지금 버전으로 되돌린다."""
+    with monkeypatch.context() as m:
+        m.setattr(mask, "VERSION", 1)
+        pipeline.index()
