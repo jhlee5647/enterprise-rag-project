@@ -8,6 +8,7 @@ PII 정답셋의 원문 청크도 지금의 PII 마스커로 마스킹해 PII �
 import csv
 import json
 import logging
+import re
 import shutil
 from collections import defaultdict
 from pathlib import Path
@@ -50,6 +51,8 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
     pii_answers = load_pii_answers(pii_path) if pii_path.exists() else None
     if pii_answers is None:
         log.warning("PII 정답셋이 없어 PII 지표는 비워 둔다: %s", pii_path)
+    else:
+        check_answers_in_text(pii_answers)
     documents = pq.read_table(
         config["paths"]["documents"], columns=["doc_id", "departments", "text"]
     ).to_pylist()
@@ -135,12 +138,43 @@ def mask_pii_answers(config: dict[str, Any], answers: list[dict[str, Any]]) -> l
     masker = mask.load_masker(config)
     return [
         {
-            "answers": [value for _, value in row["pii"]],
-            "masked_text": masker.mask(row["text"]),
-            "masked": [value for _, value in masker.find(row["text"])],
+            "text": row["text"],
+            "answers": answer_places(row["text"], [value for _, value in row["pii"]]),
+            "masked": [(start, end) for _, start, end in masker.spans(row["text"])],
         }
         for row in answers
     ]
+
+
+def check_answers_in_text(answers: list[dict[str, Any]]) -> None:
+    """정답 PII 값을 원문에서 찾지 못하는 행이 있으면 문서 ID, 청크 번호, 값을 알리고 멈춘다.
+
+    찾지 못한 값은 자리가 없어 누락으로도 세지 않으므로, 조용히 넘기지 않는다.
+    """
+    for row in answers:
+        for _, value in row["pii"]:
+            if not answer_places(row["text"], [value]):
+                raise EvalError(
+                    f"PII 정답셋의 값을 원문에서 찾지 못했다: 문서 {row['doc_id']} "
+                    f"청크 {row['chunk']}의 {value!r} (원문 글자 그대로 적었는지 확인한다)"
+                )
+
+
+def answer_places(text: str, values: list[str]) -> list[tuple[int, int]]:
+    """정답 PII 값들이 원문에서 차지하는 자리(시작, 끝). 앞뒤가 영문자·숫자가 아닌 곳에서만 찾는다.
+
+    예: 값 `Ed`는 "Ed met Eddy"에서 (0, 2) 한 자리다.
+
+    한 값의 자리가 더 긴 값의 자리 안에 들어가면 따로 세지 않는다. 예: 값이 `Denise Hannigan`과
+    `Hannigan`이고 원문이 "Denise Hannigan called. Hannigan left."이면 자리는 두 개다.
+    """
+    places = set()
+    for value in set(values):
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])"
+        places.update(m.span() for m in re.finditer(pattern, text))
+    return sorted(
+        p for p in places if not any(q != p and q[0] <= p[0] and p[1] <= q[1] for q in places)
+    )
 
 
 def load_pii_answers(path: Path) -> list[dict[str, Any]]:

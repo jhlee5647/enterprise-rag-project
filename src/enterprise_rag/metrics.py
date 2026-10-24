@@ -8,8 +8,9 @@
 지표 JSON에 들어가는 비율은 소수 셋째 자리로 반올림한다. 실행 한 번의 검색 적중률은
 반올림하지 않는다.
 
-PII 청크 하나에는 `answers`(사람이 확정한 정답 PII 값), `masked_text`(마스킹한 글),
-`masked`(마스커가 가린 원래 값)가 들어 있다. 비교는 위치가 아니라 값으로 한다.
+PII 청크 하나에는 `text`(원문), `answers`(정답 PII가 원문에서 차지하는 자리),
+`masked`(마스커가 가린 자리)가 들어 있다. 자리는 (시작, 끝) 글자 위치이고 끝은 포함하지 않는다.
+비교는 값이 아니라 자리로 한다.
 """
 
 from typing import Any
@@ -65,24 +66,39 @@ def mean_hit_rate(records: list[dict[str, Any]]) -> float | None:
 
 
 def pii_miss_rate(chunks: list[dict[str, Any]]) -> float | None:
-    """정답 PII 중 마스킹 후에도 원래 값이 그대로 남은 비율. 정답 PII가 없으면 None.
+    """정답 자리 중, 공백 아닌 글자가 하나라도 가린 자리 밖에 남은 자리의 비율. 정답이 없으면 None.
 
-    예: 정답 3개 중 1개가 남으면 1 ÷ 3 = 0.333. 소수 셋째 자리로 반올림한다.
+    예: `Barbara D. Underwood`에서 `Barbara D`만 가리면 `Underwood`가 남으므로 그 자리는 누락이다.
+    정답 자리 3개 중 1개가 남으면 1 ÷ 3 = 0.333. 소수 셋째 자리로 반올림한다.
     """
-    answers = [(c, value) for c in chunks for value in c["answers"]]
-    if not answers:
+    places = [(c, place) for c in chunks for place in c["answers"]]
+    if not places:
         return None
-    missed = sum(value in c["masked_text"] for c, value in answers)
-    return round(missed / len(answers), 3)
+    missed = sum(_left_unmasked(c, place) for c, place in places)
+    return round(missed / len(places), 3)
 
 
 def pii_false_positive_rate(chunks: list[dict[str, Any]]) -> float | None:
-    """마스커가 가린 것 중 정답 PII에 없는 값의 비율. 가린 것이 없으면 None.
+    """가린 자리 중 어떤 정답 자리와도 한 글자도 겹치지 않는 자리의 비율. 가린 것이 없으면 None.
 
-    예: 3개를 가렸는데 1개가 정답에 없으면 1 ÷ 3 = 0.333. 소수 셋째 자리로 반올림한다.
+    예: `Durbin said`를 가렸는데 정답이 `Durbin`이면 겹치므로 오탐이 아니다. 가린 자리 3개 중
+    1개가 정답과 겹치지 않으면 1 ÷ 3 = 0.333. 소수 셋째 자리로 반올림한다.
     """
-    masked = [(c, value) for c in chunks for value in c["masked"]]
+    masked = [(c, place) for c in chunks for place in c["masked"]]
     if not masked:
         return None
-    wrong = sum(value not in c["answers"] for c, value in masked)
+    wrong = sum(not any(_overlaps(place, a) for a in c["answers"]) for c, place in masked)
     return round(wrong / len(masked), 3)
+
+
+def _left_unmasked(chunk: dict[str, Any], place: tuple[int, int]) -> bool:
+    """정답 자리의 공백 아닌 글자 중 가린 자리 밖에 있는 글자가 있는지."""
+    start, end = place
+    return any(
+        not chunk["text"][i].isspace() and not any(s <= i < e for s, e in chunk["masked"])
+        for i in range(start, end)
+    )
+
+
+def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    return a[0] < b[1] and b[0] < a[1]
