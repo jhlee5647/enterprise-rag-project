@@ -48,14 +48,22 @@ def test_t03_summary_interpolates_between_sorted_values():
     assert metrics.latency_summary(records)["total"] == {"median": 250, "p95": 385}
 
 
-def test_t04_single_run_summary_equals_its_values(pipeline):
-    run = pipeline.eval([row(Q1, "inca0001", "marketing", "단일 홉", "O")], "t04")
+def test_t04_single_run_summary_equals_its_values():
+    # `eval`은 질문마다 부서 3개로 실행해 실행 1번뿐인 평가셋을 만들 수 없어, 기록 하나로 요약한다
+    record = {"latency_ms": {"embed": 12, "search": 30, "generate": 2400, "total": 2443}}
 
-    # 질문 하나를 부서 3개로 실행하므로, 그중 marketing 실행 하나만 남긴 기록으로 요약한다
-    [record] = [r for r in run.records if r["department"] == "marketing"]
-    summary = metrics.latency_summary([record])
-    for stage, value in record["latency_ms"].items():
-        assert summary[stage] == {"median": value, "p95": value}
+    assert metrics.latency_summary([record]) == {
+        "embed": {"median": 12, "p95": 12},
+        "search": {"median": 30, "p95": 30},
+        "generate": {"median": 2400, "p95": 2400},
+        "total": {"median": 2443, "p95": 2443},
+    }
+
+
+def test_extra_half_milliseconds_round_up():
+    records = [{"latency_ms": {"embed": 0, "search": 0, "generate": 0, "total": t}} for t in [2, 3]]
+
+    assert metrics.latency_summary(records)["total"]["median"] == 3
 
 
 def test_t05_run_without_llm_call_has_zero_generation_time(make_pipeline):
@@ -102,3 +110,9 @@ def test_t07_latency_adds_fields_without_changing_others(pipeline):
     assert sorted(run.records[0]) == sorted(
         ["question", "department", "expected", "retrieved", "answer", "hit_rate", "latency_ms"]
     )
+
+
+def test_extra_ask_output_has_no_latency(pipeline):
+    asked = pipeline("marketing", Q1)
+
+    assert "latency_ms" not in asked.output

@@ -12,6 +12,8 @@ from enterprise_rag.index import department_filter, open_index
 # 근거가 없을 때와 권한이 없을 때 똑같이 돌려주는 찾지 못함 응답
 NOT_FOUND = "No relevant documents were found."
 IDL_URL = "https://www.industrydocuments.ucsf.edu/docs/"
+# 단계별 지연 시간의 단계: 질문 임베딩, 검색(리랭크 포함), 답변 생성, 전체
+LATENCY_STAGES = ["embed", "search", "generate", "total"]
 
 SYSTEM_PROMPT = f"""\
 You answer questions about internal company documents.
@@ -53,19 +55,19 @@ def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any
         "generate": marks[2] - marks[1] if chunks else 0,
         "total": marks[2],
     }
-    if answer == NOT_FOUND:
-        return {
-            "answer": NOT_FOUND,
-            "citations": [],
-            "retrieved": retrieved,
-            "latency_ms": latency_ms,
-        }
+    found = answer != NOT_FOUND
     return {
         "answer": answer,
-        "citations": citations(answer, chunks),
+        "citations": citations(answer, chunks) if found else [],
         "retrieved": retrieved,
         "latency_ms": latency_ms,
     }
+
+
+def load_models(config: dict[str, Any]) -> None:
+    """질의응답기가 쓰는 모델을 미리 불러 둔다. 모델 불러오기가 첫 질문의 지연 시간에 섞이지 않게
+    `eval`이 첫 실행 전에 부른다. LLM 서버는 따로 떠 있으므로 준비하지 않는다."""
+    embedding.load_embedder(config)
 
 
 def embed_question(config: dict[str, Any], question: str) -> list[float]:

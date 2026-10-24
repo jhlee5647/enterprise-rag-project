@@ -16,8 +16,8 @@ from typing import Any
 
 import pyarrow.parquet as pq
 
-from enterprise_rag import embedding, mask, metrics
-from enterprise_rag.ask import ask
+from enterprise_rag import mask, metrics
+from enterprise_rag.ask import ask, load_models
 from enterprise_rag.departments import departments
 
 log = logging.getLogger(__name__)
@@ -61,8 +61,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
     missing = sorted({i for q in questions for i in q["doc_ids"]} - allowed.keys())
     if missing:
         raise EvalError(f"평가셋의 정답 문서 ID가 문서 표에 없다: {', '.join(missing)}")
-    # 모델 불러오기가 첫 실행의 지연 시간에 섞이지 않게 미리 불러 둔다
-    embedding.load_embedder(config)
+    load_models(config)
     records = []
     for q in questions:
         for department in departments(config["collect"]["departments"]):
