@@ -16,11 +16,12 @@ from presidio_analyzer.nlp_engine import NerModelConfiguration, NlpArtifacts, Sp
 from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
+from spacy.lang.en.stop_words import STOP_WORDS
 
 # 마스커 버전: 마스킹 결과가 바뀔 수 있는 변경을 할 때 올린다. 바뀌면 `index`가 저장된 마스킹
 # 결과를 쓰지 않는다. 예: 정규식(EMAIL, PHONE, AUTHOR), 이름 후보 규칙, 불러올 spaCy 단계,
 # spaCy·Presidio 버전 올리기
-VERSION = 1
+VERSION = 2  # 2: 가운데 머리글자, 저자 표기, 별명, 날짜·되풀이 잡음 규칙 (#38)
 
 # spaCy에서 불러올 단계. `ner`은 개체가 문장 경계를 넘지 않게 하므로, 문장 경계를 정하는
 # `parser`(와 그 입력인 `tok2vec`)가 없으면 결과가 달라진다. 나머지 단계는 결과와 상관없다
@@ -38,20 +39,44 @@ EMAIL = (
 )
 # 북미 번호: 415-555-0134, (415) 555-0134, 415.555.0134, +1 415 555 0134
 PHONE = r"(?<![\w+])(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(?!\w)"
-# 논문 저자 표기: 성(하이픈 허용) + 머리글자 1~2개 + `,` `.` `;`. 예: Severson HH, Hartmann-Boyce J,
-# 머리글자가 로마 숫자(I, V, X)뿐이면 임상 단계 표기(Phase II,)로 보고 빼놓는다.
-AUTHOR = r"(?<![\w-])[A-Z][a-z]+(?:-[A-Z][a-z]+)* (?![IVX]{1,2}[,.;])[A-Z]{1,2}(?=[,.;])"
+# 따옴표 별명이 낀 이름: 이름 + "별명" + 성. 예: Edmund "Tad" Berger. 곧은·둥근 따옴표 모두 받는다
+NICKNAME = r'(?<![\w-])[A-Z][a-z]+ ["“][A-Z][a-z]+["”] [A-Z][a-z]+(?:-[A-Z][a-z]+)*\b'
+# 저자 표기처럼 보여도 문서 구성 표기(Exhibit A, Appendix B, Cohort C)의 첫 단어이면 이름이 아니다.
+# 9,000건에서 저자 표기 모양에 걸린 첫 단어 중 이름이 될 수 없는 것만 넣는다 (#38)
+DOCUMENT_WORDS = [
+    "Annex", "Appendix", "Area", "Attachment", "Ave", "Batch", "Box", "Category", "Circle",
+    "Class", "Cohort", "Concept", "Cumulative", "Exhibit", "Figure", "Grade", "Group", "Item",
+    "Level", "Option", "Package", "Pair", "Part", "Phase", "Plan", "Retailer", "Rev", "Room",
+    "Round", "Schedule", "Section", "Series", "Stage", "Step", "Suite", "Tab", "Table", "Tier",
+    "Type", "Version", "Wave", "Zone",
+]  # fmt: skip
+# 논문 저자 표기: 성(하이픈, McKeganey 같은 가운데 대문자 허용) + 머리글자 1~2개 + `,` `.` `;`
+# 또는 ` et al`. 예: Severson HH, Hartmann-Boyce J, Hajek P et al.
+# 줄 끝에서 끝나면 머리글자 1개일 때만 본다(McKeganey N). 2개이면 Total US, Flex BG 같은 표 칸이
+# 많기 때문이다. 머리글자가 로마 숫자(I, V, X)뿐이면 임상 단계 표기(Phase II,)로 보고 빼놓는다.
+AUTHOR = (
+    rf"(?<![\w-])(?!(?:{'|'.join(DOCUMENT_WORDS)}) )[A-Z][a-z]+(?:[A-Z][a-z]+)?(?:-[A-Z][a-z]+)* "
+    r"(?![IVX]{1,2}\b)"
+    r"(?:[A-Z]{1,2}(?=[,.;]| et al\b)|[A-Z](?=[ \t]*(?:\r?\n|\Z)))"
+)
 
 # spaCy가 찾은 이름 후보를 나누는 자리(줄바꿈, ` and `)와, 이름 뒤에 붙은 문장의 시작(`. ` + 대문자)
 NAME_SEPARATOR = re.compile(r"\s*\n\s*| and ")
-SENTENCE_AFTER_NAME = re.compile(r"\.\s[A-Z]")
-# 이 중 하나라도 맞는 이름 후보는 OCR 잡음으로 보고 버린다
+SENTENCE_AFTER_NAME = re.compile(r"\.\s([A-Z][a-z]*)")
+# 마침표 앞이 대문자 한 글자(가운데 머리글자)이면 뒤를 자르지 않는다: `Joseph N. Hoang`의 `N.` 뒤를
+# 자르면 성이 드러난다. 다만 뒤 단어가 기능어(`The`, `We` 등)이면 문장의 시작이 분명하므로 자른다
+INITIAL_BEFORE_PERIOD = re.compile(r"(?<![^\W\d_])[A-Z]$")
+# 표 머리글의 월-연 날짜. 예: Jan-19, Sept-20
+MONTH_YEAR = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)-\d{2}"
+# 이 중 하나라도 맞는 이름 후보는 OCR 잡음이나 날짜로 보고 버린다
 NOT_NAME = [
     # 라틴 문자(확장 포함), 숫자, 공백, `.` `-` `'` 외의 글자
     re.compile(r"[^A-Za-zÀ-ÖØ-öø-ɏ0-9\s.'-]"),
     re.compile(r"^(?!.*[^\W\d_]{2})", re.DOTALL),  # 알파벳 2글자 이상인 단어가 없음
     re.compile(r"([^\W\d_]{2,3})\1{2,}"),  # 같은 2~3글자가 3번 이상 연달아 반복됨
     re.compile(r"^(?!.*(?<!\w)[A-Z])", re.DOTALL),  # 대문자로 시작하는 단어가 없음
+    re.compile(r"^([^\W\d_]{2,3})(?:\s+\1)+$", re.IGNORECASE),  # 같은 2~3글자 단어만 되풀이됨
+    re.compile(rf"^{MONTH_YEAR}(?:\s+{MONTH_YEAR})*$"),  # 날짜(Jan-19)만 있음
 ]
 
 
@@ -134,6 +159,19 @@ class NameRecognizer(SpacyRecognizer):
         ]
 
 
+def _sentence_after_name(candidate: str, start: int, end: int) -> int | None:
+    """이름 후보 조각 [start, end)에서 이름 뒤에 붙은 문장이 시작하는 `.`의 위치. 없으면 None.
+
+    예: `Kevin Burns. Please` → `.`의 위치, `Joseph N. Hoang` → None, `Kevin B. The` → `.`의 위치.
+    """
+    for m in SENTENCE_AFTER_NAME.finditer(candidate, start, end):
+        initial = INITIAL_BEFORE_PERIOD.search(candidate, start, m.start())
+        if initial and m.group(1).lower() not in STOP_WORDS:
+            continue
+        return m.start()
+    return None
+
+
 def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
     """이름 후보를 줄바꿈과 ` and `에서 나누고, 조각마다 `. ` 뒤 문장을 잘라 낸 뒤 잡음이 아닌
     조각만 돌려준다. 예: `Robert\\nKrulik` → `Robert`, `Krulik`
@@ -147,8 +185,8 @@ def _name_pieces(text: str, found: RecognizerResult) -> list[RecognizerResult]:
 
     pieces = []
     for start, end in spans:
-        if sentence := SENTENCE_AFTER_NAME.search(candidate, start, end):
-            end = sentence.start()
+        if sentence := _sentence_after_name(candidate, start, end):
+            end = sentence
         name = candidate[start:end].strip()
         if not name or any(rule.search(name) for rule in NOT_NAME):
             continue
@@ -184,11 +222,11 @@ def _analyzer(spacy_model: str) -> AnalyzerEngine:
     """spaCy 모델은 불러오는 데 몇 초 걸리므로 모델마다 한 번만 만든다."""
     registry = RecognizerRegistry(supported_languages=["en"])
     registry.add_recognizer(NameRecognizer(supported_entities=["PERSON"]))
-    # 저자 표기는 대소문자로 판정하므로 Presidio 기본 플래그(IGNORECASE 등)를 모두 끈다
-    author = Pattern("author", AUTHOR, 1.0)
+    # 저자 표기와 별명은 대소문자로 판정하므로 Presidio 기본 플래그(IGNORECASE 등)를 모두 끈다
+    name_patterns = [Pattern("author", AUTHOR, 1.0), Pattern("nickname", NICKNAME, 1.0)]
     registry.add_recognizer(
         PatternRecognizer(
-            "PERSON", name="AuthorRecognizer", patterns=[author], global_regex_flags=0
+            "PERSON", name="NamePatternRecognizer", patterns=name_patterns, global_regex_flags=0
         )
     )
     registry.add_recognizer(PatternRecognizer("EMAIL", patterns=[Pattern("email", EMAIL, 1.0)]))

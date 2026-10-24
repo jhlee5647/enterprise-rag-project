@@ -42,7 +42,10 @@ def test_t06_name_candidate_is_split_at_and(make_pipeline):
 
 
 def test_t07_sentence_after_period_is_cut_from_name(make_pipeline):
-    assert indexed(make_pipeline, "mska0007") == ["[NAME]. Antidepressants for smoking cessation."]
+    # #38에서 바뀜: 마침표 앞이 머리글자(`T.`)이면 뒤를 자르지 않는다. `Joseph N. Hoang`의 성이
+    # 드러나지 않게 하려는 것이라, 같은 모양인 인용 제목의 첫 단어도 함께 가린다. 단어 뒤 마침표에서
+    # 자르는 동작은 #38 T2가 확인한다
+    assert indexed(make_pipeline, "mska0007") == ["[NAME] for smoking cessation."]
 
 
 def test_t08_author_citations_are_masked(make_pipeline):
