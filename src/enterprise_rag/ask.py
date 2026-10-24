@@ -87,9 +87,9 @@ def search(config: dict[str, Any], department: str, vector: list[float]) -> list
         raise ValueError(f"지원하지 않는 검색 방식: {cfg['retrieval']} (구현된 것: dense)")
     acl = department_filter(department) if cfg["acl_filter"] else None
     with open_index(config["paths"]["index"]) as client:
-        # 근사 검색(HNSW)은 150번 중 33번에서 상위 5개가 달라 비교를 흔들었다. 허용 부서
-        # payload 색인으로도 고쳐지지 않아 정확한 최근접 검색을 한다
-        # (`docs/design/retrieval-improvement.md` 4절)
+        # 근사 검색(HNSW)은 상위 5개가 정확한 검색과 자주 달라 비교를 흔들었고, 허용 부서
+        # payload 색인으로도 고쳐지지 않았다. 그래서 정확한 최근접 검색을 한다
+        # (`docs/design/retrieval-improvement.md` 4.1절)
         points = client.query_points(
             config["index"]["collection"],
             query=vector,
