@@ -17,7 +17,7 @@ from typing import Any
 import pyarrow.parquet as pq
 
 from enterprise_rag import mask, metrics
-from enterprise_rag.ask import ask
+from enterprise_rag.ask import ask, load_models
 from enterprise_rag.departments import departments
 
 log = logging.getLogger(__name__)
@@ -61,6 +61,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
     missing = sorted({i for q in questions for i in q["doc_ids"]} - allowed.keys())
     if missing:
         raise EvalError(f"평가셋의 정답 문서 ID가 문서 표에 없다: {', '.join(missing)}")
+    load_models(config)
     records = []
     for q in questions:
         for department in departments(config["collect"]["departments"]):
@@ -81,6 +82,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
                     for c in result["retrieved"]
                 ],
                 "answer": result["answer"],
+                "latency_ms": result["latency_ms"],
             }
             record["hit_rate"] = metrics.hit_rate(record)
             records.append(record)
@@ -95,6 +97,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
         "hit_rate": metrics.mean_hit_rate(records),
         "pii_miss_rate": metrics.pii_miss_rate(pii_chunks),
         "pii_false_positive_rate": metrics.pii_false_positive_rate(pii_chunks),
+        "latency_ms": metrics.latency_summary(records),
     }
     (folder / "metrics.json").write_text(json.dumps(summary, indent=2))
     with (folder / "records.jsonl").open("w") as f:

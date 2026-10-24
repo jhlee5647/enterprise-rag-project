@@ -78,6 +78,8 @@ def run(args: argparse.Namespace) -> int:
             )
             return 2
         result = ask(config, args.dept, args.question)
+        # 단계별 지연 시간은 `eval`의 실행 기록에만 남긴다(#48)
+        result.pop("latency_ms")
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.command == "gen-eval":

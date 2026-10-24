@@ -1,9 +1,10 @@
 """지표 계산: 실행 기록으로 검색 누출률, 거부 정확도, 검색 적중률을, PII 정답셋 청크의 마스킹
-결과로 PII 누락률, PII 오탐률을 낸다.
+결과로 PII 누락률, PII 오탐률을 낸다. 실행 기록의 단계별 지연 시간은 중앙값과 p95로 요약한다.
 
 실행 기록 하나는 (질문, 부서) 한 번의 실행이다. `department`, `retrieved`(검색된 청크의
 `doc_id`와 허용 부서 `departments`), `answer`, `expected`(정답 문서의 `doc_id`와 허용 부서)가
 들어 있다. 정답 문서마다 그 문서의 사본(`copies`, 문서 ID와 허용 부서)도 들어 있다.
+단계별 지연 시간(`latency_ms`, 단계마다 밀리초 정수)도 들어 있다.
 
 지표 JSON에 들어가는 비율은 소수 셋째 자리로 반올림한다. 실행 한 번의 검색 적중률은
 반올림하지 않는다.
@@ -15,7 +16,7 @@ PII 청크 하나에는 `text`(원문), `answers`(정답 PII가 원문에서 차
 
 from typing import Any
 
-from enterprise_rag.ask import NOT_FOUND
+from enterprise_rag.ask import LATENCY_STAGES, NOT_FOUND
 
 
 def retrieval_leak_rate(records: list[dict[str, Any]]) -> float | None:
@@ -63,6 +64,37 @@ def mean_hit_rate(records: list[dict[str, Any]]) -> float | None:
     """권한이 있는 실행들의 검색 적중률 평균. 그런 실행이 없으면 None."""
     rates = [rate for r in records if (rate := hit_rate(r)) is not None]
     return round(sum(rates) / len(rates), 3) if rates else None
+
+
+def latency_summary(records: list[dict[str, Any]]) -> dict[str, dict[str, int]] | None:
+    """단계별 지연 시간(`latency_ms`)의 중앙값과 p95(밀리초 정수). 실행이 없으면 None.
+
+    백분위수는 정렬한 값 사이를 선형 보간하고 .5는 올린다. 예: 전체 시간이 100, 200, 300, 400이면
+    중앙값 250, p95 385. 2, 3이면 중앙값 3.
+    """
+    if not records:
+        return None
+    summary = {}
+    for stage in LATENCY_STAGES:
+        values = sorted(r["latency_ms"][stage] for r in records)
+        summary[stage] = {
+            "median": _round_half_up(_percentile(values, 0.5)),
+            "p95": _round_half_up(_percentile(values, 0.95)),
+        }
+    return summary
+
+
+def _percentile(values: list[float], p: float) -> float:
+    """정렬된 값의 p 백분위수. 위치 (개수 - 1) × p 양옆의 두 값을 선형 보간한다."""
+    position = (len(values) - 1) * p
+    low = int(position)
+    high = min(low + 1, len(values) - 1)
+    return values[low] + (values[high] - values[low]) * (position - low)
+
+
+def _round_half_up(value: float) -> int:
+    """0 이상의 값을 정수로 반올림한다. .5는 올린다(파이썬 `round`는 짝수 쪽으로 보낸다)."""
+    return int(value + 0.5)
 
 
 def pii_miss_rate(chunks: list[dict[str, Any]]) -> float | None:
