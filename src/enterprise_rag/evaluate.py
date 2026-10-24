@@ -11,7 +11,6 @@ import logging
 import re
 import shutil
 from collections import defaultdict
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -70,10 +69,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
     ).to_pylist()
     allowed = {d["doc_id"]: d["departments"] for d in documents}
     copies = copies_of(documents)
-    missing = sorted({i for q in questions for i in q["doc_ids"]} - allowed.keys())
-    if missing:
-        raise EvalError(f"평가셋의 정답 문서 ID가 문서 표에 없다: {', '.join(missing)}")
-    check_other_versions(questions, allowed.keys())
+    check_eval_set(questions, set(allowed))
     load_models(config)
     records = []
     for q in questions:
@@ -86,11 +82,8 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
                     {
                         "doc_id": i,
                         "departments": allowed[i],
-                        "copies": [{"doc_id": c, "departments": allowed[c]} for c in copies[i]],
-                        "other_versions": [
-                            {"doc_id": v, "departments": allowed[v]}
-                            for v in q["other_versions"].get(i, [])
-                        ],
+                        "copies": with_departments(copies[i], allowed),
+                        "other_versions": with_departments(q["other_versions"].get(i, []), allowed),
                     }
                     for i in q["doc_ids"]
                 ],
@@ -146,7 +139,8 @@ def load_eval_set(path: Path) -> list[dict[str, Any]]:
 
 
 def parse_other_versions(cell: str) -> dict[str, list[str]]:
-    """`A=A2|A3;C=C2` → {"A": ["A2", "A3"], "C": ["C2"]}. `=`가 없는 항목이면 EvalError."""
+    """`A=A2|A3;C=C2` → {"A": ["A2", "A3"], "C": ["C2"]}. `=`가 없거나 같은 정답 문서가 두 번 나오면
+    EvalError."""
     versions = {}
     for item in cell.split(DOC_ID_SEPARATOR):
         if not item.strip():
@@ -155,14 +149,24 @@ def parse_other_versions(cell: str) -> dict[str, list[str]]:
             raise EvalError(
                 f"평가셋의 다른 판본 형식이 틀렸다: {item.strip()} (<정답 문서 ID>=<판본 ID>|...)"
             )
-        answer, ids = item.split("=", 1)
-        versions[answer.strip()] = [v.strip() for v in ids.split(VERSION_SEPARATOR) if v.strip()]
+        answer, ids = (part.strip() for part in item.split("=", 1))
+        if answer in versions:
+            raise EvalError(f"평가셋의 다른 판본에 같은 정답 문서가 두 번 있다: {answer}")
+        versions[answer] = [v.strip() for v in ids.split(VERSION_SEPARATOR) if v.strip()]
     return versions
 
 
-def check_other_versions(questions: list[dict[str, Any]], known: Iterable[str]) -> None:
-    """다른 판본이 문서 표에 없거나, 판본을 단 정답 문서가 그 행의 정답 문서가 아니면 EvalError."""
-    known = set(known)
+def with_departments(doc_ids: list[str], allowed: dict[str, list[str]]) -> list[dict[str, Any]]:
+    """문서 ID마다 그 허용 부서를 붙인다. 실행 기록의 사본·다른 판본 항목 형태다."""
+    return [{"doc_id": i, "departments": allowed[i]} for i in doc_ids]
+
+
+def check_eval_set(questions: list[dict[str, Any]], known: set[str]) -> None:
+    """질의응답 전에 평가셋의 문서 ID를 확인한다. 정답 문서나 다른 판본이 문서 표(`known`)에
+    없거나, 판본을 단 정답 문서가 그 행의 정답 문서가 아니면 EvalError."""
+    missing = sorted({i for q in questions for i in q["doc_ids"]} - known)
+    if missing:
+        raise EvalError(f"평가셋의 정답 문서 ID가 문서 표에 없다: {', '.join(missing)}")
     for q in questions:
         wrong = sorted(set(q["other_versions"]) - set(q["doc_ids"]))
         if wrong:

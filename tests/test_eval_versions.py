@@ -122,6 +122,19 @@ def test_t08_version_on_document_not_in_doc_ids_stops(version_pipeline, capsys):
 
     assert code == 2
     assert B in capsys.readouterr().err
+    assert not (Path(version_pipeline.config["paths"]["runs"]) / "t08").exists()
+    assert version_pipeline.vllm.requests == []
+
+
+def test_extra_same_answer_document_written_twice_stops(version_pipeline, capsys):
+    # 예: 사람이 CSV를 고치다 같은 정답 문서의 판본 목록을 두 번 적은 경우
+    rows = [row(BOOTH, A, "marketing", "단일 홉", "O", other_versions=f"{A}={A2};{A}={B}")]
+    capsys.readouterr()
+
+    code = version_pipeline.eval(rows, "extra", expect_code=2)
+
+    assert code == 2
+    assert A in capsys.readouterr().err
 
 
 def test_t09_multi_hop_counts_version_for_one_answer_document(version_pipeline):

@@ -38,16 +38,19 @@ def refusal_accuracy(records: list[dict[str, Any]]) -> float | None:
 
 
 def has_access(record: dict[str, Any]) -> bool:
-    """정답 문서나 그 사본 중 하나 이상의 허용 부서에 실행한 부서가 들어 있으면 권한이 있다."""
+    """정답 문서나 그 사본·다른 판본 중 하나 이상의 허용 부서에 실행한 부서가 들어 있으면 권한이
+    있다."""
     return any(
-        record["department"] in c["departments"] for d in record["expected"] for c in with_copies(d)
+        record["department"] in c["departments"]
+        for d in record["expected"]
+        for c in same_answer_documents(d)
     )
 
 
-def with_copies(expected: dict[str, Any]) -> list[dict[str, Any]]:
-    """정답 문서 하나와 그 사본들, 평가셋에 적은 다른 판본들. 적중과 권한은 이 중 하나로
+def same_answer_documents(expected: dict[str, Any]) -> list[dict[str, Any]]:
+    """정답 문서 하나와, 정답 문서와 같게 보는 그 사본들·다른 판본들. 적중과 권한은 이 중 하나로
     판정한다."""
-    return [expected, *expected["copies"], *expected.get("other_versions", [])]
+    return [expected, *expected["copies"], *expected["other_versions"]]
 
 
 def hit_rate(record: dict[str, Any]) -> float | None:
@@ -58,7 +61,9 @@ def hit_rate(record: dict[str, Any]) -> float | None:
     if not has_access(record):
         return None
     retrieved = {c["doc_id"] for c in record["retrieved"]}
-    found = [d for d in record["expected"] if {c["doc_id"] for c in with_copies(d)} & retrieved]
+    found = [
+        d for d in record["expected"] if {c["doc_id"] for c in same_answer_documents(d)} & retrieved
+    ]
     return len(found) / len(record["expected"])
 
 
