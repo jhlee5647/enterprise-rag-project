@@ -124,7 +124,7 @@ _Avoid_: 마스킹 캐시, 중간 파일
 _Avoid_: 마스커 리비전, 규칙 버전
 
 **이름 찾기 모델**:
-마스커에서 실명(NAME) 후보를 찾는 모델. config `pii.name_model`로 `spacy`(spaCy `en_core_web_lg`, 기본값) 또는 `gliner`(GLiNER)를 고른다. 찾은 후보에는 모델과 상관없이 같은 보정 규칙과 저자 표기·별명 정규식을 적용한다.
+마스커에서 실명(NAME) 후보를 찾는 모델. config `pii.name_model`로 `spacy`(spaCy `en_core_web_lg`) 또는 `gliner`(GLiNER)를 고른다. 지정하지 않으면 `spacy`이고, `config.yaml`은 `gliner`를 쓴다(#44). 찾은 후보에는 모델과 상관없이 같은 보정 규칙과 저자 표기·별명 정규식을 적용한다.
 _Avoid_: NER 엔진, 이름 인식기
 
 **역할 명사**:
