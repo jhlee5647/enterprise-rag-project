@@ -31,6 +31,8 @@ EMBED_BATCH = 8192
 UPSERT_BATCH = 1024
 # 마스킹 결과 파일의 메타데이터에 다시 쓰는 조건을 적는 키
 CONDITIONS_KEY = b"masking_conditions"
+# 청크의 허용 부서를 담는 payload 필드. ACL 필터와 payload 색인이 함께 쓴다
+DEPARTMENTS_FIELD = "departments"
 # 작업 프로세스에 한 번에 넘기는 문서 수. 문서 길이가 고르지 않아 작게 나눈다
 DOCS_PER_TASK = 8
 
@@ -71,7 +73,7 @@ def index(config: dict[str, Any]) -> None:
             chunk(body, embedder, cfg["chunk_size"], cfg["chunk_overlap"])
         ):
             payload = {
-                "departments": doc["departments"],
+                DEPARTMENTS_FIELD: doc["departments"],
                 "doc_id": doc["doc_id"],
                 "bates": doc["bates"],
                 "title": title,
@@ -88,6 +90,8 @@ def index(config: dict[str, Any]) -> None:
             collection,
             vectors_config=models.VectorParams(size=embedder.dim, distance=models.Distance.COSINE),
         )
+        if is_url(config["paths"]["index"]):  # 로컬 모드는 payload 색인을 쓰지 않는다
+            add_payload_index(client, collection)
         for start in range(0, len(payloads), EMBED_BATCH):
             batch = payloads[start : start + EMBED_BATCH]
             vectors = embedder.embed_documents([p["text"] for p in batch])
@@ -198,10 +202,35 @@ def chunk(text: str, embedder: embedding.Embedder, size: int, overlap: int) -> l
     return chunks
 
 
+def add_payload_index(client: QdrantClient, collection: str) -> None:
+    """허용 부서 필드에 keyword payload 색인을 만든다. 부서로 거르는 검색(ACL 필터)이 이 색인으로
+    청크를 고른다 (`docs/design/retrieval-improvement.md` 4절)."""
+    client.create_payload_index(
+        collection, DEPARTMENTS_FIELD, models.PayloadSchemaType.KEYWORD, wait=True
+    )
+
+
+def add_payload_index_to_existing(config: dict[str, Any]) -> None:
+    """이미 있는 컬렉션에 허용 부서 payload 색인만 더한다. 마스킹·임베딩은 다시 하지 않는다.
+
+    색인 위치가 서버가 아니거나 컬렉션이 없으면 `IndexingError`.
+    """
+    collection = config["index"]["collection"]
+    if not is_url(config["paths"]["index"]):
+        raise IndexingError("payload 색인은 Qdrant 서버에서만 쓴다: 색인 위치가 서버 주소가 아니다")
+    with open_index(config["paths"]["index"]) as client:
+        if not client.collection_exists(collection):
+            raise IndexingError(f"컬렉션이 없다: {collection} (먼저 index를 실행한다)")
+        add_payload_index(client, collection)
+    log.info("컬렉션 %s에 허용 부서 payload 색인을 더했다", collection)
+
+
 def department_filter(department: str) -> models.Filter:
     """허용 부서에 `department`가 들어 있는 청크만 남기는 Qdrant 필터."""
     return models.Filter(
-        must=[models.FieldCondition(key="departments", match=models.MatchValue(value=department))]
+        must=[
+            models.FieldCondition(key=DEPARTMENTS_FIELD, match=models.MatchValue(value=department))
+        ]
     )
 
 

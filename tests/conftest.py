@@ -1,7 +1,13 @@
 import csv
 import json
+import os
+import shutil
+import socket
+import subprocess
+import time
 from pathlib import Path
 
+import httpx
 import pyarrow.parquet as pq
 import pytest
 import yaml
@@ -289,3 +295,65 @@ def make_pipeline(run_collect, tmp_path, monkeypatch, capsys):
 def pipeline(make_pipeline):
     """질의응답 fixture(`PIPELINE_CELLS`)로 만든 `Pipeline`."""
     return make_pipeline(PIPELINE_CELLS)
+
+
+# 테스트용 Qdrant 서버 바이너리. `scripts/qdrant-server.sh start`가 내려받는 자리와 같다
+QDRANT_BIN = Path(os.environ.get("QDRANT_HOME", "/workspace/qdrant")) / "bin" / "qdrant"
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture
+def qdrant_server(tmp_path):
+    """임시 저장소와 빈 포트로 Qdrant 서버를 띄우고 주소를 돌려준다. 바이너리가 없으면 건너뛴다.
+
+    로컬 모드로는 확인할 수 없는 서버 동작(payload 색인 등)만 이 서버로 확인한다(#49).
+    """
+    if not QDRANT_BIN.exists():
+        pytest.skip(f"Qdrant 서버 바이너리가 없다: {QDRANT_BIN} (scripts/qdrant-server.sh start)")
+    http, grpc = _free_port(), _free_port()
+    storage = tmp_path / "qdrant"
+    env = {
+        **os.environ,
+        "QDRANT__STORAGE__STORAGE_PATH": str(storage / "storage"),
+        "QDRANT__STORAGE__SNAPSHOTS_PATH": str(storage / "snapshots"),
+        "QDRANT__SERVICE__HOST": "127.0.0.1",
+        "QDRANT__SERVICE__HTTP_PORT": str(http),
+        "QDRANT__SERVICE__GRPC_PORT": str(grpc),
+        "QDRANT__TELEMETRY_DISABLED": "true",
+    }
+    url = f"http://127.0.0.1:{http}"
+    server = subprocess.Popen(
+        [str(QDRANT_BIN)],
+        cwd=tmp_path,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        for _ in range(100):
+            try:
+                if httpx.get(url + "/readyz", timeout=1).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            pytest.fail("테스트용 Qdrant 서버가 10초 안에 뜨지 않았다")
+        yield url
+    finally:
+        server.terminate()
+        server.wait(timeout=10)
+        shutil.rmtree(storage, ignore_errors=True)
+
+
+@pytest.fixture
+def server_pipeline(pipeline, qdrant_server):
+    """질의응답 fixture를 테스트용 Qdrant 서버에 색인한 `Pipeline`."""
+    pipeline.config["paths"]["index"] = qdrant_server
+    pipeline.index()
+    return pipeline
