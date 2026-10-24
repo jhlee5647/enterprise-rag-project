@@ -5,6 +5,7 @@ description = "JUUL 사내 문서 RAG PoC"
 requires-python = ">=3.12"
 dependencies = [
     "en-core-web-lg",
+    "gliner>=0.2.29",
     "httpx>=0.27",
     # ragas 0.4.3은 langchain-community 0.4에서 빠진 모듈(chat_models.vertexai)을 import한다
     "langchain-community<0.4",

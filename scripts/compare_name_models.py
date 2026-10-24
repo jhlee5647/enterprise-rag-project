@@ -54,8 +54,7 @@ FOUND_SCORE = 0.85
 # 속도 표본을 고르는 시드와, LLM에 동시에 보낼 문서 수(vLLM이 요청을 함께 처리한다)
 SPEED_SEED = 39
 LLM_PARALLEL = 8
-# GLiNER와 LLM에 한 번에 넘기는 글 조각의 최대 길이(글자). 줄 단위로 끊는다
-GLINER_WINDOW = 1200
+# LLM에 한 번에 넘기는 글 조각의 최대 길이(글자). 줄 단위로 끊는다 (GLiNER는 mask.GLINER_WINDOW)
 LLM_WINDOW = 3000
 LLM_PROMPT = (
     "List every real person's name that appears in the text below, exactly as written "
@@ -65,10 +64,6 @@ LLM_PROMPT = (
     'strings only, for example ["Kate Morgan", "Thed"]. Answer [] if there is none.\n\n'
     "Text:\n"
 )
-
-
-# 이름 앞 직함. 예: Sen. Mark Warner, Dr. Smith
-TITLE = re.compile(r"(?:Sen|Rep|Gov|Dr|Mr|Mrs|Ms|Prof|Hon|Judge|Rev)\.?\s+")
 
 
 class CandidateMasker(mask.Masker):
@@ -97,7 +92,7 @@ class FoundNameRecognizer(EntityRecognizer):
             # GLiNER와 LLM은 직함까지 이름으로 돌려준다(`Sen. Mark Warner`). spaCy는 직함을
             # 넣지 않으므로 같은 조건이 되게 직함을 떼고 보정 규칙에 넘긴다. 떼지 않으면
             # `Sen. ` 뒤가 잘려 이름이 버려진다
-            if title := TITLE.match(text, start, end):
+            if title := mask.TITLE.match(text, start, end):
                 start = title.end()
             results += mask._name_pieces(text, RecognizerResult("PERSON", start, end, FOUND_SCORE))
         return results
@@ -125,22 +120,6 @@ def build_analyzer(name_recognizer, spacy_model: str, pipes: list[str]) -> Analy
         mask.SPACY_PIPES = saved
 
 
-def windows(text: str, size: int) -> list[tuple[int, str]]:
-    """글을 줄 단위로 `size` 글자 이하의 조각으로 나눠 (시작 위치, 조각)으로 돌려준다."""
-    out, start, end = [], 0, 0
-    for line in re.finditer(r"[^\n]*\n|[^\n]+$", text):
-        if line.end() - start > size and end > start:
-            out.append((start, text[start:end]))
-            start = end
-        end = line.end()
-        while end - start > size:  # 한 줄이 너무 길면 자른다
-            out.append((start, text[start : start + size]))
-            start += size
-    if end > start:
-        out.append((start, text[start:end]))
-    return out
-
-
 def gliner_finder():
     from gliner import GLiNER
 
@@ -148,7 +127,7 @@ def gliner_finder():
 
     def find(text):
         spans = []
-        for offset, piece in windows(text, GLINER_WINDOW):
+        for offset, piece in mask._windows(text, mask.GLINER_WINDOW):
             for e in model.predict_entities(piece, ["person"], threshold=GLINER_THRESHOLD):
                 spans.append((offset + e["start"], offset + e["end"]))
         return spans
@@ -178,7 +157,7 @@ def llm_finder(config):
 
     def find(text):
         spans = []
-        for offset, piece in windows(text, LLM_WINDOW):
+        for offset, piece in mask._windows(text, LLM_WINDOW):
             for name in set(ask(piece)):
                 pattern = rf"(?<![A-Za-z0-9]){re.escape(name.strip())}(?![A-Za-z0-9])"
                 found = re.finditer(pattern, piece)
