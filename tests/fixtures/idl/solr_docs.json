@@ -1382,5 +1382,121 @@
     "bates": "JLI00040008",
     "dateaddeducsf": "2024 June 27",
     "topic": "Product Design & Quality"
+  },
+  {
+    "id": "vera0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Trade show booth budget",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000961",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Marketing"
+  },
+  {
+    "id": "vera0002",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Trade show booth budget draft",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000962",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Marketing;Government & Public Affairs"
+  },
+  {
+    "id": "verb0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Weekly shipment flash report",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000963",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Marketing"
+  },
+  {
+    "id": "verc0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Influencer roster",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000964",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Government & Public Affairs"
   }
 ]

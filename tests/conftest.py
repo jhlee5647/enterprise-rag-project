@@ -180,15 +180,25 @@ class Pipeline:
         captured = self.capsys.readouterr()
         return Asked(code, captured.out, captured.err)
 
-    def eval(self, rows, run_name, acl_filter=True, top_k=5, expect_code=0, pii_answers=None):
+    def eval(
+        self,
+        rows,
+        run_name,
+        acl_filter=True,
+        top_k=5,
+        expect_code=0,
+        pii_answers=None,
+        columns=EVAL_SET_COLUMNS,
+    ):
         """평가셋 CSV(와 `pii_answers`가 있으면 PII 정답셋 CSV)를 쓰고 `eval --run-name`을
         실행해 실행 결과 폴더를 돌려준다.
 
         `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
+        `columns`는 평가셋 CSV의 열이다(예: 다른 판본 열이 없던 이전 평가셋).
         """
         self._write_config(acl_filter=acl_filter, top_k=top_k)
         with open(self.config["paths"]["eval_set"], "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=EVAL_SET_COLUMNS)
+            writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
             writer.writerows(rows)
         if pii_answers is not None:

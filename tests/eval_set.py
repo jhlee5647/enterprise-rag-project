@@ -6,8 +6,9 @@ Q3 = "influencer campaign budget and creator program results"
 Q4 = "age verification policy"
 
 
-def row(question, doc_ids, department, question_type, keep):
-    return {
+def row(question, doc_ids, department, question_type, keep, other_versions=None):
+    """평가셋 한 행. `other_versions`를 주면 다른 판본 열(#50)도 채운다."""
+    r = {
         "question": question,
         "answer": "",
         "doc_ids": doc_ids,
@@ -15,6 +16,9 @@ def row(question, doc_ids, department, question_type, keep):
         "question_type": question_type,
         "keep": keep,
     }
+    if other_versions is not None:
+        r["other_versions"] = other_versions
+    return r
 
 
 EVAL_SET = [
