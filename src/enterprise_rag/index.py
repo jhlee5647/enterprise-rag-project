@@ -1,8 +1,8 @@
 """색인기: 문서 표의 본문을 PII 마스킹하고 청크로 잘라 임베딩해 Qdrant(로컬 모드)에 저장한다.
 
 마스킹은 작업 프로세스 여러 개로 나눠 하고, 결과를 마스킹 결과 파일에 저장해 다음 색인에서 다시
-쓴다. 다시 쓰는 조건은 문서 표 파일의 SHA-256, PII 종류 목록, spaCy 모델 이름, 마스커 버전이 모두
-같을 때다 (`docs/design/issue8-followup.md` 11절).
+쓴다. 다시 쓰는 조건은 문서 표 파일의 SHA-256, PII 종류 목록, spaCy 모델 이름, 이름 찾기 모델,
+마스커 버전이 모두 같을 때다 (`docs/design/issue8-followup.md` 11절).
 """
 
 import hashlib
@@ -51,6 +51,10 @@ def index(config: dict[str, Any]) -> None:
         raise IndexingError(f"pii.workers(마스킹 작업 프로세스 수)는 1 이상이어야 한다: {workers}")
     # 작업 프로세스 안에서 실패하면 원인이 가려지므로, 띄우기 전에 여기서 알린다
     mask.check_types(config["pii"]["types"])
+    try:
+        mask.check_name_model(mask.name_model(config))
+    except ValueError as e:
+        raise IndexingError(str(e)) from None
     try:
         embedding.check_dtype(config["embedding"]["dtype"])
     except ValueError as e:
@@ -117,8 +121,9 @@ def masked_documents(
     workers = config["pii"]["workers"]
     pairs = [(d["title"], d["text"]) for d in documents]
     model, types = config["pii"]["spacy_model"], config["pii"]["types"]
+    name_model = mask.name_model(config)
     if workers == 1:
-        _start_worker(model, types)
+        _start_worker(model, types, name_model)
         masked_pairs = [_mask_pair(p) for p in pairs]
     else:
         # 부모 프로세스가 불러 둔 임베딩 모델(GPU)을 물려받지 않도록 새로 띄운다.
@@ -127,7 +132,7 @@ def masked_documents(
             workers,
             mp_context=multiprocessing.get_context("spawn"),
             initializer=_start_worker,
-            initargs=(model, types),
+            initargs=(model, types, name_model),
         ) as pool:
             masked_pairs = list(pool.map(_mask_pair, pairs, chunksize=DOCS_PER_TASK))
     table = pa.table(
@@ -148,7 +153,7 @@ def masked_documents(
 
 
 def masking_conditions(config: dict[str, Any]) -> dict[str, Any]:
-    """마스킹 결과를 다시 쓰는 조건 네 가지."""
+    """마스킹 결과를 다시 쓰는 조건 다섯 가지."""
     digest = hashlib.sha256()
     with open(config["paths"]["documents"], "rb") as f:
         for block in iter(lambda: f.read(1 << 20), b""):
@@ -157,6 +162,7 @@ def masking_conditions(config: dict[str, Any]) -> dict[str, Any]:
         "documents_sha256": digest.hexdigest(),
         "pii_types": config["pii"]["types"],
         "spacy_model": config["pii"]["spacy_model"],
+        "name_model": mask.name_model(config),
         "masker_version": mask.VERSION,
     }
 
@@ -164,10 +170,10 @@ def masking_conditions(config: dict[str, Any]) -> dict[str, Any]:
 _masker: mask.Masker | None = None
 
 
-def _start_worker(spacy_model: str, types: list[str]) -> None:
+def _start_worker(spacy_model: str, types: list[str], name_model: str) -> None:
     """작업 프로세스마다 마스커를 한 번 불러 둔다."""
     global _masker
-    _masker = mask.Masker(spacy_model, types)
+    _masker = mask.Masker(spacy_model, types, name_model)
 
 
 def _mask_pair(pair: tuple[str, str]) -> tuple[str, str]:
