@@ -54,10 +54,14 @@ DOCUMENT_WORDS = [
 # 또는 ` et al`. 예: Severson HH, Hartmann-Boyce J, Hajek P et al.
 # 줄 끝에서 끝나면 머리글자 1개일 때만 본다(McKeganey N). 2개이면 Total US, Flex BG 같은 표 칸이
 # 많기 때문이다. 머리글자가 로마 숫자(I, V, X)뿐이면 임상 단계 표기(Phase II,)로 보고 빼놓는다.
+# 머리글자 1개 + `. ` 뒤에 대문자 단어가 오면 가운데 머리글자로 보고 그 단어(성)까지 잡는다
+# (Linda C. Alano). 뒤 단어가 기능어(The, We 등)이면 문장의 시작으로 보고 머리글자까지만 잡는다
+_SENTENCE_STARTS = "|".join(sorted(w.title() for w in STOP_WORDS if w.isalpha()))
 AUTHOR = (
     rf"(?<![\w-])(?!(?:{'|'.join(DOCUMENT_WORDS)}) )[A-Z][a-z]+(?:[A-Z][a-z]+)?(?:-[A-Z][a-z]+)* "
     r"(?![IVX]{1,2}\b)"
-    r"(?:[A-Z]{1,2}(?=[,.;]| et al\b)|[A-Z](?=[ \t]*(?:\r?\n|\Z)))"
+    rf"(?:[A-Z]\. (?!(?:{_SENTENCE_STARTS})\b)[A-Z][a-z]+(?:[A-Z][a-z]+)?(?:-[A-Z][a-z]+)*\b"
+    r"|[A-Z]{1,2}(?=[,.;]| et al\b)|[A-Z](?=[ \t]*(?:\r?\n|\Z)))"
 )
 
 # spaCy가 찾은 이름 후보를 나누는 자리(줄바꿈, ` and `)와, 이름 뒤에 붙은 문장의 시작(`. ` + 대문자)

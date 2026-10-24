@@ -1,7 +1,7 @@
 """`collect` → `index`: 마스커가 가운데 머리글자 뒤 성, 저자 표기 빈틈, 따옴표 별명을 가리고,
 문서 구성 표기·날짜·되풀이 잡음은 가리지 않는다.
 
-테스트 이름의 `tNN`은 티켓 #38 Acceptance criteria의 사례 번호다.
+테스트 이름의 `tNN`은 티켓 #38 Acceptance criteria의 사례 번호다. `extra`는 구현 중 추가한 사례다.
 사례마다 그 문장만 본문에 든 fixture 문서(`mskb00NN`, NN은 사례 번호)를 색인해 청크를 읽는다.
 NER은 실제 spaCy 모델을 쓴다.
 """
@@ -20,6 +20,14 @@ def test_t01_surname_after_middle_initial_is_masked(make_pipeline):
 
     assert "Hoang" not in text
     assert "Joseph" not in text
+
+
+def test_extra_surname_after_initial_is_masked_when_ner_misses_the_name(make_pipeline):
+    # 예: 메일 서명. spaCy가 이름을 못 찾고 저자 표기 정규식이 `Linda C`까지만 잡던 경우
+    [text] = indexed(make_pipeline, "mskb0010")
+
+    assert "Alano" not in text
+    assert text.endswith("Marketing @ JUUL")
 
 
 def test_t02_sentence_after_a_word_and_period_is_still_cut(make_pipeline):
