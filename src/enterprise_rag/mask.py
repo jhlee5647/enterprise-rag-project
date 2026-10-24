@@ -1,5 +1,6 @@
 """PII 마스커: 실명(NER), 이메일·전화번호(정규식)를 찾아 가명 토큰으로 바꾼다. 색인 전에 쓴다."""
 
+import logging
 import re
 from functools import cache
 from typing import Any, NamedTuple
@@ -19,6 +20,8 @@ from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 from presidio_anonymizer import AnonymizerEngine
 from presidio_anonymizer.entities import OperatorConfig
 from spacy.lang.en.stop_words import STOP_WORDS
+
+log = logging.getLogger(__name__)
 
 # 마스커 버전: 마스킹 결과가 바뀔 수 있는 변경을 할 때 올린다. 바뀌면 `index`가 저장된 마스킹
 # 결과를 쓰지 않는다. 예: 정규식(EMAIL, PHONE, AUTHOR), 이름 후보 규칙, 불러올 spaCy 단계,
@@ -45,6 +48,7 @@ PHONE = r"(?<![\w+])(?:\+?1[\s.-]?)?(?:\(\d{3}\)|\d{3})[\s.-]?\d{3}[\s.-]?\d{4}(
 NICKNAME = r'(?<![\w-])[A-Z][a-z]+ ["“][A-Z][a-z]+["”] [A-Z][a-z]+(?:-[A-Z][a-z]+)*\b'
 # 이름 찾기 모델: spaCy(기본) 또는 GLiNER (#44)
 NAME_MODELS = ["spacy", "gliner"]
+DEFAULT_NAME_MODEL = "spacy"
 GLINER_MODEL = "urchade/gliner_medium-v2.1"
 # GLiNER에 함께 주는 레이블. 첫 레이블로 잡힌 것만 이름 후보로 쓴다. "person" 대신 "person name"으로
 # 이름 자체를 묻고, 직함과 회사를 함께 물어 역할 명사(Sales Rep, Distributor)가 그쪽으로 가게 한다.
@@ -53,12 +57,14 @@ GLINER_LABELS = ["person name", "job title", "organization"]
 GLINER_THRESHOLD = 0.5
 # GLiNER에 한 번에 넘기는 글 조각의 최대 길이(글자). 줄 단위로 끊는다
 GLINER_WINDOW = 1200
-# 사람으로 잡혔어도 바로 앞에 한정사가 있으면 실명이 아니라 역할 명사로 본다: the Supplier,
-# each User
+# 사람으로 잡힌 한 단어 바로 앞에 소문자 한정사가 있으면 실명이 아니라 역할 명사로 본다:
+# the Supplier, each User. 두 단어 이상(a John Smith)이나 대문자 한정사(문장 첫머리 That Carol,
+# 표 칸 NO)는 실명일 수 있어 그대로 둔다
 ROLE_DETERMINER = re.compile(
-    r"\b(?:the|a|an|each|every|any|all|no|this|that|these|those|our|your|their|its|such)\s+\Z",
-    re.IGNORECASE,
+    r"\b(?:the|a|an|each|every|any|all|no|this|that|these|those|our|your|their|its|such)\s+\Z"
 )
+# 한정사를 찾을 때 이름 앞에서 볼 글자 수. 가장 긴 한정사(`these`)와 공백 몇 칸이 들어간다
+DETERMINER_LOOKBACK = 20
 # 이름 앞 직함. 예: Sen. Mark Warner, Dr. Smith
 TITLE = re.compile(r"(?:Sen|Rep|Gov|Dr|Mr|Mrs|Ms|Prof|Hon|Judge|Rev)\.?\s+")
 # 저자 표기처럼 보여도 문서 구성 표기(Exhibit A, Appendix B, Cohort C)의 첫 단어이면 이름이 아니다.
@@ -120,7 +126,7 @@ NAMES = {t.entity: name for name, t in TYPES.items()}
 
 
 class Masker:
-    def __init__(self, spacy_model: str, types: list[str], name_model: str = "spacy"):
+    def __init__(self, spacy_model: str, types: list[str], name_model: str = DEFAULT_NAME_MODEL):
         check_types(types)
         check_name_model(name_model)
         self._analyzer = _analyzer(spacy_model, name_model)
@@ -175,7 +181,7 @@ def load_masker(config: dict[str, Any]) -> Masker:
 
 def name_model(config: dict[str, Any]) -> str:
     """config의 이름 찾기 모델. 지정하지 않으면 spaCy다."""
-    return config["pii"].get("name_model", "spacy")
+    return config["pii"].get("name_model", DEFAULT_NAME_MODEL)
 
 
 def check_name_model(name: str) -> None:
@@ -212,8 +218,8 @@ class GlinerNameRecognizer(EntityRecognizer):
         model = _gliner()
         results = []
         for offset, piece in _windows(text, GLINER_WINDOW):
-            found = model.predict_entities(piece, GLINER_LABELS, threshold=GLINER_THRESHOLD)
-            for e in found:
+            predicted = model.predict_entities(piece, GLINER_LABELS, threshold=GLINER_THRESHOLD)
+            for e in predicted:
                 if e["label"] != GLINER_LABELS[0]:
                     continue
                 start, end = offset + e["start"], offset + e["end"]
@@ -221,11 +227,19 @@ class GlinerNameRecognizer(EntityRecognizer):
                 # `Sen.` 뒤를 다음 문장으로 보고 잘라 이름을 버린다
                 if title := TITLE.match(text, start, end):
                     start = title.end()
-                if ROLE_DETERMINER.search(text[max(0, start - 12) : start]):
+                if _is_role_noun(text, start, end):
                     continue
-                found_name = RecognizerResult("PERSON", start, end, e["score"])
-                results += _name_pieces(text, found_name)
+                candidate = RecognizerResult("PERSON", start, end, e["score"])
+                results += _name_pieces(text, candidate)
         return results
+
+
+def _is_role_noun(text: str, start: int, end: int) -> bool:
+    """사람으로 잡힌 [start, end)가 소문자 한정사 뒤의 한 단어인지. 예: "each User"의 User."""
+    if len(text[start:end].split()) != 1:
+        return False
+    # 원문에서 찾아야 앞 글자를 보고 단어 경계를 정한다(`Mexican`의 `an`은 한정사가 아니다)
+    return ROLE_DETERMINER.search(text, max(0, start - DETERMINER_LOOKBACK), start) is not None
 
 
 @cache
@@ -233,6 +247,8 @@ def _gliner() -> Any:
     """GLiNER 모델은 불러오는 데 몇 초 걸리므로 프로세스마다 한 번만 불러 둔다. GPU가 있으면 씀."""
     from gliner import GLiNER
 
+    if not torch.cuda.is_available():
+        log.warning("GPU가 없어 GLiNER를 CPU에서 돌린다. 9,000건 마스킹이 크게 느려진다")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     return GLiNER.from_pretrained(GLINER_MODEL).to(device)
 

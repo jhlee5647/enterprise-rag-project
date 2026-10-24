@@ -3,6 +3,7 @@
 
 테스트 이름의 `tNN`은 티켓 #44 Acceptance criteria의 사례 번호다. `extra`는 구현 중 추가한 사례다.
 사례마다 그 문장만 본문에 든 fixture 문서(`mskc00NN`, NN은 사례 번호)를 색인해 청크를 읽는다.
+T5는 #38 T1의 문서(`mskb0001`)를 그대로 쓴다.
 GLiNER와 spaCy는 실제 모델을 쓴다.
 """
 
@@ -29,6 +30,14 @@ def test_t03_role_nouns_are_left_as_is(make_pipeline):
     assert indexed(make_pipeline, "mskc0003") == [
         "The Distributor shall notify the Supplier and each User."
     ]
+
+
+def test_extra_real_names_after_determiners_are_still_masked(make_pipeline):
+    # 한정사 규칙은 역할 명사(the Supplier)를 거르려는 것이라, 실명까지 버리면 안 된다
+    [text] = indexed(make_pipeline, "mskc0008")
+
+    assert "John Smith" not in text
+    assert "Carol" not in text
 
 
 def test_t04_title_before_name_is_left_and_name_is_masked(make_pipeline):
