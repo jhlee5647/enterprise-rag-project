@@ -40,8 +40,9 @@ pii:
   types: [NAME, EMAIL, PHONE]   # PII 종류 목록: index가 가명 토큰([NAME] 등)으로 가릴 종류
   # spaCy 모델: 이름 찾기 모델이 spacy이면 실명을 찾고, gliner이면 토큰 나누기만 한다 (설계 기록 11번)
   spacy_model: en_core_web_lg
-  # 이름 찾기 모델: spacy(위 spaCy 모델) 또는 gliner(GLiNER, GPU). 바꾸면 다음 index가 다시 마스킹한다 (#44)
-  name_model: spacy
+  # 이름 찾기 모델: spacy(위 spaCy 모델) 또는 gliner(GLiNER, GPU). 빼면 spacy. 바꾸면 다음 index가 다시 마스킹한다.
+  # gliner는 측정용 NAME 누락률·오탐률을 0.277/0.284에서 0.085/0.139로 줄였고, 9,000건 마스킹은 약 25분이다 (#44)
+  name_model: gliner
   workers: 6   # 마스킹 작업 프로세스 수. CPU 한도 7.65코어, 프로세스당 메모리 약 2.9GB (`docs/design/issue8-followup.md` 9절)
 
 embedding:
