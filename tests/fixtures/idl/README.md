@@ -25,6 +25,7 @@
 | fdar0001 | document | `Product Design & Quality` | .ocr | PII 없는 본문은 그대로 (기관명 FDA) |
 | mska0001~mska0011 | document | `Product Design & Quality` | .ocr | 마스커 사례 #19 T1~T11 (본문은 사례 문장 하나, 끝 줄바꿈 없음) |
 | mskx0001 | document | `Product Design & Quality` | .ocr | 마스커 #19 추가 사례 (라틴 확장 문자 이름) |
+| mskb0001~mskb0010 | document | `Product Design & Quality` | .ocr | 마스커 사례 #38 T1~T9와 추가 사례 (본문은 사례 문장 하나, 끝 줄바꿈 없음) |
 | copa0001 | document | `Marketing` | .ocr | 사본 문서 A (#23) |
 | copa0002 | document | `Marketing;Government & Public Affairs` | .ocr | A의 사본 A′: 본문에 공백만 더함 (#23) |
 | copb0001 | document | `Marketing` | .ocr | A와 한 글자 다른 문서 B: `colour` → `color` (#23) |
