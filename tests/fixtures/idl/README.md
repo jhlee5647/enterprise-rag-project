@@ -30,3 +30,7 @@
 | copa0001 | document | `Marketing` | .ocr | 사본 문서 A (#23) |
 | copa0002 | document | `Marketing;Government & Public Affairs` | .ocr | A의 사본 A′: 본문에 공백만 더함 (#23) |
 | copb0001 | document | `Marketing` | .ocr | A와 한 글자 다른 문서 B: `colour` → `color` (#23) |
+| vera0001 | document | `Marketing` | .ocr | 다른 판본이 있는 정답 문서 A (#50) |
+| vera0002 | document | `Marketing;Government & Public Affairs` | .ocr | A의 다른 판본 A2: 마지막 문장만 다름 (#50) |
+| verb0001 | document | `Marketing` | .ocr | A와 관계없는 문서 B (#50) |
+| verc0001 | document | `Government & Public Affairs` | .ocr | 다중 홉 사례의 두 번째 정답 문서 C (#50) |

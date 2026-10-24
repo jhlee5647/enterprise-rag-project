@@ -11,6 +11,7 @@ import logging
 import re
 import shutil
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +24,20 @@ from enterprise_rag.departments import departments
 log = logging.getLogger(__name__)
 
 # 평가셋 CSV의 열. gen-eval(#6)이 이 열로 쓰고, 사람은 keep에 O/X를 적는다.
-# doc_ids는 정답 문서 ID이며 여러 개면 `;`로 나눈다.
-EVAL_SET_COLUMNS = ["question", "answer", "doc_ids", "department", "question_type", "keep"]
+# doc_ids는 정답 문서 ID이며 여러 개면 `;`로 나눈다. other_versions는 다른 판본(#50)이다.
+# 사람이 확인해 `<정답 문서 ID>=<판본 ID>|<판본 ID>`로 적고, 정답 문서가 여럿이면 `;`로 나눈다.
+# 열이 없거나 칸이 비면 다른 판본이 없다.
+EVAL_SET_COLUMNS = [
+    "question",
+    "answer",
+    "doc_ids",
+    "department",
+    "question_type",
+    "keep",
+    "other_versions",
+]
 DOC_ID_SEPARATOR = ";"
+VERSION_SEPARATOR = "|"
 # PII 정답셋 CSV의 열. gen-eval(#7)이 초안으로 쓰고, 사람은 pii를 고쳐 정답셋으로 확정한다.
 # text는 마스킹 전 원문 청크, pii는 "종류: 값"을 `;`로 이은 목록이다(예: "NAME: Kate Morgan; ...").
 # split은 개발용(dev)·측정용(test) 표시다(#18). 마스커 규칙은 dev만 보고 만든다.
@@ -61,6 +73,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
     missing = sorted({i for q in questions for i in q["doc_ids"]} - allowed.keys())
     if missing:
         raise EvalError(f"평가셋의 정답 문서 ID가 문서 표에 없다: {', '.join(missing)}")
+    check_other_versions(questions, allowed.keys())
     load_models(config)
     records = []
     for q in questions:
@@ -74,6 +87,10 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
                         "doc_id": i,
                         "departments": allowed[i],
                         "copies": [{"doc_id": c, "departments": allowed[c]} for c in copies[i]],
+                        "other_versions": [
+                            {"doc_id": v, "departments": allowed[v]}
+                            for v in q["other_versions"].get(i, [])
+                        ],
                     }
                     for i in q["doc_ids"]
                 ],
@@ -119,12 +136,42 @@ def copies_of(documents: list[dict[str, Any]]) -> dict[str, list[str]]:
 
 
 def load_eval_set(path: Path) -> list[dict[str, Any]]:
-    """평가셋 CSV에서 `keep`이 O인 행만 읽는다."""
+    """평가셋 CSV에서 `keep`이 O인 행만 읽는다. 다른 판본은 정답 문서 ID별 판본 ID 목록으로 푼다."""
     with open(path, newline="") as f:
         rows = [r for r in csv.DictReader(f) if r["keep"].strip().upper() == "O"]
     for r in rows:
         r["doc_ids"] = [i.strip() for i in r["doc_ids"].split(DOC_ID_SEPARATOR) if i.strip()]
+        r["other_versions"] = parse_other_versions(r.get("other_versions") or "")
     return rows
+
+
+def parse_other_versions(cell: str) -> dict[str, list[str]]:
+    """`A=A2|A3;C=C2` → {"A": ["A2", "A3"], "C": ["C2"]}. `=`가 없는 항목이면 EvalError."""
+    versions = {}
+    for item in cell.split(DOC_ID_SEPARATOR):
+        if not item.strip():
+            continue
+        if "=" not in item:
+            raise EvalError(
+                f"평가셋의 다른 판본 형식이 틀렸다: {item.strip()} (<정답 문서 ID>=<판본 ID>|...)"
+            )
+        answer, ids = item.split("=", 1)
+        versions[answer.strip()] = [v.strip() for v in ids.split(VERSION_SEPARATOR) if v.strip()]
+    return versions
+
+
+def check_other_versions(questions: list[dict[str, Any]], known: Iterable[str]) -> None:
+    """다른 판본이 문서 표에 없거나, 판본을 단 정답 문서가 그 행의 정답 문서가 아니면 EvalError."""
+    known = set(known)
+    for q in questions:
+        wrong = sorted(set(q["other_versions"]) - set(q["doc_ids"]))
+        if wrong:
+            raise EvalError(
+                f"다른 판본을 단 문서가 그 행의 정답 문서(doc_ids)에 없다: {', '.join(wrong)}"
+            )
+        missing = sorted({v for vs in q["other_versions"].values() for v in vs} - known)
+        if missing:
+            raise EvalError(f"평가셋의 다른 판본 ID가 문서 표에 없다: {', '.join(missing)}")
 
 
 def measured_chunks(answers: list[dict[str, Any]]) -> list[dict[str, Any]]:

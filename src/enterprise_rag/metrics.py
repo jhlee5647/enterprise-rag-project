@@ -3,7 +3,8 @@
 
 실행 기록 하나는 (질문, 부서) 한 번의 실행이다. `department`, `retrieved`(검색된 청크의
 `doc_id`와 허용 부서 `departments`), `answer`, `expected`(정답 문서의 `doc_id`와 허용 부서)가
-들어 있다. 정답 문서마다 그 문서의 사본(`copies`, 문서 ID와 허용 부서)도 들어 있다.
+들어 있다. 정답 문서마다 그 문서의 사본(`copies`)과 평가셋에 적은 다른 판본(`other_versions`)의
+문서 ID와 허용 부서도 들어 있다.
 단계별 지연 시간(`latency_ms`, 단계마다 밀리초 정수)도 들어 있다.
 
 지표 JSON에 들어가는 비율은 소수 셋째 자리로 반올림한다. 실행 한 번의 검색 적중률은
@@ -44,8 +45,9 @@ def has_access(record: dict[str, Any]) -> bool:
 
 
 def with_copies(expected: dict[str, Any]) -> list[dict[str, Any]]:
-    """정답 문서 하나와 그 사본들. 적중과 권한은 이 중 하나로 판정한다."""
-    return [expected, *expected["copies"]]
+    """정답 문서 하나와 그 사본들, 평가셋에 적은 다른 판본들. 적중과 권한은 이 중 하나로
+    판정한다."""
+    return [expected, *expected["copies"], *expected.get("other_versions", [])]
 
 
 def hit_rate(record: dict[str, Any]) -> float | None:
