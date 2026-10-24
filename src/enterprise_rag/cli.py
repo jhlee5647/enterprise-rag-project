@@ -12,7 +12,12 @@ from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
 from enterprise_rag.evaluate import EvalError, evaluate
 from enterprise_rag.gen_eval import GenEvalError, extend_pii_answers, gen_eval, make_eval_set
-from enterprise_rag.index import IndexingError, IndexServerError, index
+from enterprise_rag.index import (
+    IndexingError,
+    IndexServerError,
+    add_payload_index_to_existing,
+    index,
+)
 
 COMMANDS = {
     "collect": "IDL에서 표본을 뽑아 본문을 받고 허용 부서를 계산해 문서 표로 저장한다",
@@ -28,6 +33,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=Path("config.yaml"), help="config 파일 경로")
     sub = parser.add_subparsers(dest="command", required=True)
     commands = {name: sub.add_parser(name, help=help_text) for name, help_text in COMMANDS.items()}
+    commands["index"].add_argument(
+        "--payload-index-only",
+        action="store_true",
+        help="다시 색인하지 않고, 이미 있는 컬렉션에 허용 부서 payload 색인만 더한다",
+    )
     commands["ask"].add_argument("--dept", required=True, help="질문하는 사람의 부서")
     commands["ask"].add_argument("question", help="영어 질문")
     commands["eval"].add_argument(
@@ -63,7 +73,11 @@ def run(args: argparse.Namespace) -> int:
         return 0
     if args.command == "index":
         try:
-            index(load_config(args.config))
+            config = load_config(args.config)
+            if args.payload_index_only:
+                add_payload_index_to_existing(config)
+            else:
+                index(config)
         except IndexingError as e:
             print(e, file=sys.stderr)
             return 2

@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 import httpx
+from qdrant_client import models
 
 from enterprise_rag import embedding
 from enterprise_rag.index import department_filter, open_index
@@ -79,15 +80,22 @@ def embed_question(config: dict[str, Any], question: str) -> list[float]:
 
 
 def search(config: dict[str, Any], department: str, vector: list[float]) -> list[dict[str, Any]]:
-    """질문 벡터와 가장 가까운 청크 상위 k개. ACL 필터가 켜져 있으면 검색 전에 허용 부서로
-    거른다."""
+    """질문 벡터와 가장 가까운 청크 상위 k개(정확한 최근접 검색). ACL 필터가 켜져 있으면 검색
+    전에 허용 부서로 거른다."""
     cfg = config["ask"]
     if cfg["retrieval"] != "dense":
         raise ValueError(f"지원하지 않는 검색 방식: {cfg['retrieval']} (구현된 것: dense)")
     acl = department_filter(department) if cfg["acl_filter"] else None
     with open_index(config["paths"]["index"]) as client:
+        # 근사 검색(HNSW)은 150번 중 33번에서 상위 5개가 달라 비교를 흔들었다. 허용 부서
+        # payload 색인으로도 고쳐지지 않아 정확한 최근접 검색을 한다
+        # (`docs/design/retrieval-improvement.md` 4절)
         points = client.query_points(
-            config["index"]["collection"], query=vector, query_filter=acl, limit=cfg["top_k"]
+            config["index"]["collection"],
+            query=vector,
+            query_filter=acl,
+            limit=cfg["top_k"],
+            search_params=models.SearchParams(exact=True),
         ).points
     return [{**p.payload, "score": p.score} for p in points]
 

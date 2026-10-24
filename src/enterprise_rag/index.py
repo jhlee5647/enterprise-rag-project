@@ -88,6 +88,7 @@ def index(config: dict[str, Any]) -> None:
             collection,
             vectors_config=models.VectorParams(size=embedder.dim, distance=models.Distance.COSINE),
         )
+        add_payload_index(client, config)
         for start in range(0, len(payloads), EMBED_BATCH):
             batch = payloads[start : start + EMBED_BATCH]
             vectors = embedder.embed_documents([p["text"] for p in batch])
@@ -196,6 +197,34 @@ def chunk(text: str, embedder: embedding.Embedder, size: int, overlap: int) -> l
             break
         start = end - overlap
     return chunks
+
+
+def add_payload_index(client: QdrantClient, config: dict[str, Any]) -> None:
+    """허용 부서 필드에 keyword payload 색인을 만든다. 부서로 거른 근사 검색이 결과를 놓치지 않게
+    한다 (`docs/design/retrieval-improvement.md` 1, 4절). 로컬 모드는 payload 색인을 쓰지 않아
+    서버일 때만 만든다."""
+    if is_url(config["paths"]["index"]):
+        client.create_payload_index(
+            config["index"]["collection"],
+            "departments",
+            models.PayloadSchemaType.KEYWORD,
+            wait=True,
+        )
+
+
+def add_payload_index_to_existing(config: dict[str, Any]) -> None:
+    """이미 있는 컬렉션에 허용 부서 payload 색인만 더한다. 마스킹·임베딩은 다시 하지 않는다.
+
+    색인 위치가 서버가 아니거나 컬렉션이 없으면 `IndexingError`.
+    """
+    collection = config["index"]["collection"]
+    if not is_url(config["paths"]["index"]):
+        raise IndexingError("payload 색인은 Qdrant 서버에서만 쓴다: 색인 위치가 서버 주소가 아니다")
+    with open_index(config["paths"]["index"]) as client:
+        if not client.collection_exists(collection):
+            raise IndexingError(f"컬렉션이 없다: {collection} (먼저 index를 실행한다)")
+        add_payload_index(client, config)
+    log.info("컬렉션 %s에 허용 부서 payload 색인을 더했다", collection)
 
 
 def department_filter(department: str) -> models.Filter:
