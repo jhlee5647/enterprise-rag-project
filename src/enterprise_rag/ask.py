@@ -1,6 +1,7 @@
 """질의응답기: (질문, 부서)를 받아 검색 → 리랭크 → 생성을 거쳐 답변과 인용 목록을 돌려준다."""
 
 import re
+import time
 from typing import Any
 
 import httpx
@@ -21,9 +22,16 @@ If the sources do not answer the question, output exactly this sentence and noth
 
 
 def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any]:
-    """답변(`answer`), 인용 목록(`citations`), 검색된 청크 목록(`retrieved`)을 돌려준다."""
+    """답변(`answer`), 인용 목록(`citations`), 검색된 청크 목록(`retrieved`), 단계별 지연 시간
+    (`latency_ms`: 질문 임베딩 `embed`, 검색과 리랭크 `search`, 답변 생성 `generate`, 전체 `total`,
+    밀리초 정수)을 돌려준다. LLM을 부르지 않으면 답변 생성 시간은 0이다.
+    """
     cfg = config["ask"]
-    chunks = rerank(cfg["reranker"], retrieve(config, department, question))
+    started = time.perf_counter()
+    vector = embed_question(config, question)
+    embedded = time.perf_counter()
+    chunks = rerank(cfg["reranker"], search(config, department, vector))
+    searched = time.perf_counter()
     retrieved = [
         {
             "doc_id": c["doc_id"],
@@ -36,17 +44,41 @@ def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any
     ]
     # 남은 청크가 없으면 LLM을 부르지 않는다. LLM이 찾지 못함 응답을 내면 인용 없이 그대로 돌려준다.
     answer = generate(config["llm"], question, chunks) if chunks else NOT_FOUND
+    generated = time.perf_counter()
+    # 시작부터 잰 시각을 밀리초 정수로 반올림한 뒤 빼서, 단계의 합이 전체를 넘지 않게 한다
+    marks = [round((t - started) * 1000) for t in (embedded, searched, generated)]
+    latency_ms = {
+        "embed": marks[0],
+        "search": marks[1] - marks[0],
+        "generate": marks[2] - marks[1] if chunks else 0,
+        "total": marks[2],
+    }
     if answer == NOT_FOUND:
-        return {"answer": NOT_FOUND, "citations": [], "retrieved": retrieved}
-    return {"answer": answer, "citations": citations(answer, chunks), "retrieved": retrieved}
+        return {
+            "answer": NOT_FOUND,
+            "citations": [],
+            "retrieved": retrieved,
+            "latency_ms": latency_ms,
+        }
+    return {
+        "answer": answer,
+        "citations": citations(answer, chunks),
+        "retrieved": retrieved,
+        "latency_ms": latency_ms,
+    }
 
 
-def retrieve(config: dict[str, Any], department: str, question: str) -> list[dict[str, Any]]:
-    """질문과 가장 가까운 청크 상위 k개. ACL 필터가 켜져 있으면 검색 전에 허용 부서로 거른다."""
+def embed_question(config: dict[str, Any], question: str) -> list[float]:
+    """질문을 config의 임베딩 모델로 임베딩한다."""
+    return embedding.load_embedder(config).embed_query(question)
+
+
+def search(config: dict[str, Any], department: str, vector: list[float]) -> list[dict[str, Any]]:
+    """질문 벡터와 가장 가까운 청크 상위 k개. ACL 필터가 켜져 있으면 검색 전에 허용 부서로
+    거른다."""
     cfg = config["ask"]
     if cfg["retrieval"] != "dense":
         raise ValueError(f"지원하지 않는 검색 방식: {cfg['retrieval']} (구현된 것: dense)")
-    vector = embedding.load_embedder(config).embed_query(question)
     acl = department_filter(department) if cfg["acl_filter"] else None
     with open_index(config["paths"]["index"]) as client:
         points = client.query_points(

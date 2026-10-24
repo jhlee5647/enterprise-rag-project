@@ -95,6 +95,7 @@ def test_t07_one_metrics_json_has_qa_and_pii_metrics(pipeline):
         "hit_rate",
         "pii_miss_rate",
         "pii_false_positive_rate",
+        "latency_ms",  # #48
     }
     assert None not in run.metrics.values()
 

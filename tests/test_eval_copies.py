@@ -75,7 +75,9 @@ def test_t04_hit_rate_is_rounded_to_three_decimals(copy_pipeline):
 def test_t05_every_ratio_in_metrics_has_at_most_three_decimals(pipeline):
     run = pipeline.eval(EVAL_SET, "t05")
 
-    for name, value in run.metrics.items():
+    # 지연 시간(#48)은 비율이 아니라 밀리초 요약이라 뺀다
+    ratios = {k: v for k, v in run.metrics.items() if k != "latency_ms"}
+    for name, value in ratios.items():
         assert value is None or round(value, 3) == value, name
 
 
