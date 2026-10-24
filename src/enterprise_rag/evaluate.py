@@ -140,7 +140,7 @@ def mask_pii_answers(config: dict[str, Any], answers: list[dict[str, Any]]) -> l
         {
             "text": row["text"],
             "answers": answer_places(row["text"], [value for _, value in row["pii"]]),
-            "masked": [(start, end) for _, start, end in masker.spans(row["text"])],
+            "masked": [(start, end) for _, start, end in masker.masked_places(row["text"])],
         }
         for row in answers
     ]

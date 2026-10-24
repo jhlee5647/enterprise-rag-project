@@ -101,4 +101,5 @@ def _left_unmasked(chunk: dict[str, Any], place: tuple[int, int]) -> bool:
 
 
 def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """두 자리가 한 글자라도 겹치는지. 예: (0, 6)과 (5, 9)는 겹치고, (0, 5)와 (5, 9)는 아니다."""
     return a[0] < b[1] and b[0] < a[1]

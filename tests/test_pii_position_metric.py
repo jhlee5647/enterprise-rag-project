@@ -16,7 +16,7 @@ class FakeMasker:
     def __init__(self, masked_by_text):
         self.masked_by_text = masked_by_text
 
-    def spans(self, text):
+    def masked_places(self, text):
         found, start_at = [], {}
         for value in self.masked_by_text.get(text, []):
             start = text.index(value, start_at.get(value, 0))
@@ -35,8 +35,9 @@ def masked(monkeypatch):
     return use
 
 
-def chunk(text, pii, doc_id="P1"):
-    return {"doc_id": doc_id, "chunk": "0", "text": text, "pii": pii, "split": "test"}
+def chunk(text, pii, doc_id="P1", number="0"):
+    """측정용 PII 정답셋 한 행."""
+    return {"doc_id": doc_id, "chunk": number, "text": text, "pii": pii, "split": "test"}
 
 
 def test_t01_name_partly_masked_counts_as_missed(pipeline, masked):
@@ -104,7 +105,7 @@ def test_t07_answer_value_missing_from_text_stops_eval(pipeline, masked, capsys)
     masked({})
     rows = [
         chunk("Please call Kate Morgan.", "NAME: Kate Morgan"),
-        chunk("John Smith signed the letter.", "NAME: Jon Smith", doc_id="P2"),
+        chunk("John Smith signed the letter.", "NAME: Jon Smith", doc_id="P2", number="7"),
     ]
 
     code = pipeline.eval([], "t07", pii_answers=rows, expect_code=2)
@@ -112,6 +113,7 @@ def test_t07_answer_value_missing_from_text_stops_eval(pipeline, masked, capsys)
     assert code == 2
     err = capsys.readouterr().err
     assert "P2" in err
+    assert "청크 7" in err
     assert "Jon Smith" in err
 
 
