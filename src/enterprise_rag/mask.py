@@ -91,6 +91,12 @@ class Masker:
         """`mask`가 가리는 PII를 (종류, 원래 값)으로 글 속 순서대로 돌려준다.
 
         예: ("NAME", "Kate Morgan"), ("EMAIL", "kate.morgan@juul.com").
+        """
+        return [(kind, text[start:end]) for kind, start, end in self.masked_places(text)]
+
+    def masked_places(self, text: str) -> list[tuple[str, int, int]]:
+        """`mask`가 가리는 자리(가린 자리)를 (종류, 시작, 끝)으로 글 속 순서대로 돌려준다.
+        끝은 포함하지 않는다. 예: "Call Kate Morgan" → [("NAME", 5, 16)].
 
         겹치는 것을 정리하는 방식이 `mask`와 같도록, 바꾸는 대신 그대로 두는(keep) 익명화를 돌려
         실제로 가려질 부분만 얻는다.
@@ -99,7 +105,8 @@ class Masker:
             return []
         found = self._analyzer.analyze(text, language="en", entities=self._entities)
         kept = self._anonymizer.anonymize(text, found, {"DEFAULT": OperatorConfig("keep")})
-        return [(NAMES[i.entity_type], i.text) for i in sorted(kept.items, key=lambda i: i.start)]
+        items = sorted(kept.items, key=lambda i: i.start)
+        return [(NAMES[i.entity_type], i.start, i.end) for i in items]
 
 
 def check_types(types: list[str]) -> None:
