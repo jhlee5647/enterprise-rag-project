@@ -34,3 +34,6 @@
 | vera0002 | document | `Marketing;Government & Public Affairs` | .ocr | A의 다른 판본 A2: 마지막 문장만 다름 (#50) |
 | verb0001 | document | `Marketing` | .ocr | A와 관계없는 문서 B (#50) |
 | verc0001 | document | `Government & Public Affairs` | .ocr | 다중 홉 사례의 두 번째 정답 문서 C (#50) |
+| hyba0001 | document | `Marketing` | .ocr | 하이브리드 검색의 정답 R: 질문과 드문 고유명 `Zorvex`만 겹침 (#52) |
+| hybb0001, hybb0002 | document | `Marketing` | .ocr | 질문과 기능어(`what`, `does`, `have` 등)만 많이 겹치는 문서: 가짜 dense 임베딩에서 R보다 가깝다 (#52) |
+| hybc0001 | document | `Government & Public Affairs` | .ocr | `Zorvex`가 든 regulatory 전용 문서: ACL 사례 (#52) |

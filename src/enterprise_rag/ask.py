@@ -8,11 +8,22 @@ import httpx
 from qdrant_client import models
 
 from enterprise_rag import embedding
-from enterprise_rag.index import department_filter, open_index
+from enterprise_rag.index import SPARSE_VECTOR, department_filter, open_index
+
+
+class AskError(Exception):
+    """질의응답을 시작할 수 없을 때(설정이나 색인 형식 문제). 메시지를 그대로 보여 준다."""
+
 
 # 근거가 없을 때와 권한이 없을 때 똑같이 돌려주는 찾지 못함 응답
 NOT_FOUND = "No relevant documents were found."
 IDL_URL = "https://www.industrydocuments.ucsf.edu/docs/"
+# 검색 방식: dense(질문 임베딩과 가까운 청크), hybrid(dense와 BM25를 RRF로 합침, #52)
+RETRIEVALS = ["dense", "hybrid"]
+# config에 검색 방식이 없을 때 쓰는 값
+DEFAULT_RETRIEVAL = "dense"
+# 하이브리드 검색에서 dense·BM25 각각 가져올 후보 수는 상위 k의 이 배수다
+HYBRID_CANDIDATES = 4
 # 단계별 지연 시간의 단계: 질문 임베딩, 검색(리랭크 포함), 답변 생성, 전체
 LATENCY_STAGES = ["embed", "search", "generate", "total"]
 
@@ -33,7 +44,7 @@ def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any
     started = time.perf_counter()
     vector = embed_question(config, question)
     embedded = time.perf_counter()
-    chunks = rerank(cfg["reranker"], search(config, department, vector))
+    chunks = rerank(cfg["reranker"], search(config, department, question, vector))
     searched = time.perf_counter()
     retrieved = [
         {
@@ -70,8 +81,11 @@ def load_models(config: dict[str, Any]) -> None:
     `eval`이 첫 실행 전에 부른다. LLM 서버는 따로 떠 있으므로 준비하지 않는다.
 
     GPU 모델은 첫 임베딩에서 준비 작업을 해 1초 넘게 걸리므로, 짧은 질문을 한 번 임베딩해 둔다.
+    hybrid이면 BM25 단어 가중치 모델도 한 번 써 둔다.
     """
     embed_question(config, "warm-up")
+    if retrieval_of(config) == "hybrid":
+        embedding.bm25_query("warm-up")
 
 
 def embed_question(config: dict[str, Any], question: str) -> list[float]:
@@ -79,25 +93,79 @@ def embed_question(config: dict[str, Any], question: str) -> list[float]:
     return embedding.load_embedder(config).embed_query(question)
 
 
-def search(config: dict[str, Any], department: str, vector: list[float]) -> list[dict[str, Any]]:
-    """질문 벡터와 가장 가까운 청크 상위 k개(정확한 최근접 검색). ACL 필터가 켜져 있으면 검색
-    전에 허용 부서로 거른다."""
+def search(
+    config: dict[str, Any], department: str, question: str, vector: list[float]
+) -> list[dict[str, Any]]:
+    """질문과 가장 가까운 청크 상위 k개. ACL 필터가 켜져 있으면 검색 전에 허용 부서로 거른다.
+
+    dense는 질문 벡터로 정확한 최근접 검색을 한다. hybrid는 dense와 BM25(질문의 단어 가중치로
+    sparse 벡터 검색)가 각각 후보를 가져오고 Qdrant가 RRF로 합친다. ACL 필터는 두 검색 모두에 건다.
+    """
     cfg = config["ask"]
-    if cfg["retrieval"] != "dense":
-        raise ValueError(f"지원하지 않는 검색 방식: {cfg['retrieval']} (구현된 것: dense)")
+    retrieval = retrieval_of(config)
+    check_retrieval(retrieval)
     acl = department_filter(department) if cfg["acl_filter"] else None
+    # 근사 검색(HNSW)은 상위 5개가 정확한 검색과 자주 달라 비교를 흔들었고, 허용 부서
+    # payload 색인으로도 고쳐지지 않았다. 그래서 정확한 최근접 검색을 한다
+    # (`docs/design/retrieval-improvement.md` 4.1절)
+    exact = models.SearchParams(exact=True)
     with open_index(config["paths"]["index"]) as client:
-        # 근사 검색(HNSW)은 상위 5개가 정확한 검색과 자주 달라 비교를 흔들었고, 허용 부서
-        # payload 색인으로도 고쳐지지 않았다. 그래서 정확한 최근접 검색을 한다
-        # (`docs/design/retrieval-improvement.md` 4.1절)
-        points = client.query_points(
-            config["index"]["collection"],
-            query=vector,
-            query_filter=acl,
-            limit=cfg["top_k"],
-            search_params=models.SearchParams(exact=True),
-        ).points
+        if retrieval == "dense":
+            points = client.query_points(
+                config["index"]["collection"],
+                query=vector,
+                query_filter=acl,
+                limit=cfg["top_k"],
+                search_params=exact,
+            ).points
+        else:
+            indices, values = embedding.bm25_query(question)
+            candidates = cfg["top_k"] * HYBRID_CANDIDATES
+            points = client.query_points(
+                config["index"]["collection"],
+                prefetch=[
+                    models.Prefetch(query=vector, filter=acl, limit=candidates, params=exact),
+                    models.Prefetch(
+                        query=models.SparseVector(indices=indices, values=values),
+                        using=SPARSE_VECTOR,
+                        filter=acl,
+                        limit=candidates,
+                    ),
+                ],
+                query=models.FusionQuery(fusion=models.Fusion.RRF),
+                limit=cfg["top_k"],
+            ).points
     return [{**p.payload, "score": p.score} for p in points]
+
+
+def retrieval_of(config: dict[str, Any]) -> str:
+    """config의 검색 방식(`ask.retrieval`). 없으면 `DEFAULT_RETRIEVAL`."""
+    return config["ask"].get("retrieval", DEFAULT_RETRIEVAL)
+
+
+def check_retrieval(retrieval: str) -> None:
+    """검색 방식이 `RETRIEVALS`에 없으면 AskError."""
+    if retrieval not in RETRIEVALS:
+        raise AskError(
+            f"ask.retrieval(검색 방식)은 {', '.join(RETRIEVALS)} 중 하나여야 한다: {retrieval}"
+        )
+
+
+def check_index(config: dict[str, Any]) -> None:
+    """질의응답 전에 검색 방식과 색인이 맞는지 확인한다. 모르는 검색 방식이거나, hybrid인데 색인에
+    BM25 sparse 벡터가 없으면(#52 이전 형식) AskError."""
+    retrieval = retrieval_of(config)
+    check_retrieval(retrieval)
+    if retrieval != "hybrid":
+        return
+    collection = config["index"]["collection"]
+    with open_index(config["paths"]["index"]) as client:
+        sparse = client.get_collection(collection).config.params.sparse_vectors or {}
+    if SPARSE_VECTOR not in sparse:
+        raise AskError(
+            f"색인 {collection}에 BM25 sparse 벡터가 없어 hybrid 검색을 할 수 없다 "
+            "(index를 다시 실행한다)"
+        )
 
 
 def rerank(reranker: str, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:

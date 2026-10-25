@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from enterprise_rag.ask import ask
+from enterprise_rag.ask import AskError, ask, check_index
 from enterprise_rag.collect import collect
 from enterprise_rag.config import load_config
 from enterprise_rag.departments import departments
@@ -91,6 +91,11 @@ def run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        try:
+            check_index(config)
+        except AskError as e:
+            print(e, file=sys.stderr)
+            return 2
         result = ask(config, args.dept, args.question)
         # 단계별 지연 시간은 `eval`의 실행 기록에만 남긴다(#48)
         result.pop("latency_ms")
@@ -112,7 +117,7 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "eval":
         try:
             evaluate(load_config(args.config), args.config, args.run_name)
-        except EvalError as e:
+        except (EvalError, AskError) as e:
             print(e, file=sys.stderr)
             return 2
         return 0
