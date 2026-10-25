@@ -1,0 +1,83 @@
+# 경로와 파라미터를 모은 config. 상대 경로는 이 파일이 있는 폴더 기준이다.
+
+paths:
+  documents: data/documents.parquet   # 문서 표 (collect 결과)
+  masked: data/documents.masked.parquet   # 마스킹 결과 파일: index가 마스킹한 제목·본문. 조건이 같으면 다음 index가 다시 쓴다
+  sample_ids: data/sample_ids.txt     # 뽑힌 문서 ID 목록, 한 줄에 하나
+  collect_log: data/collect.log       # 수집 로그: 칸별 목표·수집·부족 수, 건너뛴 문서와 사유
+  # 색인 (index 결과). http:// 또는 https://로 시작하면 Qdrant 서버, 아니면 로컬 모드 폴더.
+  # 서버는 Pod 안에서 scripts/qdrant-server.sh start로 띄운다
+  index: http://localhost:6333
+  eval_set: data/eval_set.csv        # 검수된 평가셋 (gen-eval이 쓰고 사람이 keep을 적은 CSV)
+  runs: runs                          # 실행 결과 폴더들. eval --run-name <이름>이면 runs/<이름>/
+  pii_answers: data/pii_answers.csv   # PII 정답셋 (gen-eval이 초안을 쓰고 사람이 PII 목록을 고친 CSV)
+
+idl:
+  solr_url: https://metadata.idl.ucsf.edu/solr/ltdl3/query
+  s3_url: https://ucsf-idl-dataset.s3.amazonaws.com
+
+collect:
+  seed: 42          # Solr sort=random_<seed> asc
+  quota: 1000       # 칸(부서 × 문서 종류)마다 뽑을 문서 수
+  # 본문 길이 한도(글자 수). 넘는 문서는 건너뛰고 수집 로그에 남긴다. 표 데이터가 통째로 든
+  # 1억 자짜리 문서가 있어서다. spaCy NER이 한 번에 받는 길이 한도(100만 자)와 맞춘다.
+  max_body_chars: 1000000
+  doc_types: [email, document, presentation]
+  # JUUL 밖에서 만든 외부 문서 종류. q에 NOT type:(...)으로 붙여 뺀다.
+  excluded_types: [publication, article, news, transcript, video, audio]
+  # 연결표: IDL 토픽 → 부서 (ADR-0001)
+  departments:
+    Marketing: marketing
+    Government & Public Affairs: regulatory
+    Product Design & Quality: product
+
+index:
+  chunk_size: 512     # 청크 길이 (임베딩 모델의 토큰 수)
+  chunk_overlap: 64   # 앞 청크와 겹치는 토큰 수
+  collection: chunks  # 색인의 Qdrant 컬렉션 이름. 같은 서버에 색인을 따로 만들 때 바꾼다 (예: 마스킹을 끈 색인)
+
+pii:
+  types: [NAME, EMAIL, PHONE]   # PII 종류 목록: index가 가명 토큰([NAME] 등)으로 가릴 종류
+  # spaCy 모델: 이름 찾기 모델이 spacy이면 실명을 찾고, gliner이면 토큰 나누기만 한다 (설계 기록 11번)
+  spacy_model: en_core_web_lg
+  # 이름 찾기 모델: spacy(위 spaCy 모델) 또는 gliner(GLiNER, GPU). 빼면 spacy. 바꾸면 다음 index가 다시 마스킹한다.
+  # gliner는 측정용 NAME 누락률·오탐률을 0.277/0.284에서 0.085/0.139로 줄였고, 9,000건 마스킹은 약 25분이다 (#44)
+  name_model: gliner
+  workers: 6   # 마스킹 작업 프로세스 수. CPU 한도 7.65코어, 프로세스당 메모리 약 2.9GB (`docs/design/issue8-followup.md` 9절)
+
+embedding:
+  model: Qwen/Qwen3-Embedding-0.6B   # 앱 프로세스 안에서 실행한다
+  dtype: bfloat16   # 정밀도: bfloat16 또는 float32. 문서와 질문 모두 이 정밀도로 임베딩한다 (`docs/design/issue8-followup.md` 12절)
+
+ask:
+  acl_filter: true   # 켜면 질문한 부서가 허용 부서에 없는 청크를 검색 전에 뺀다
+  # 검색 방식: dense(질문 임베딩과 가까운 청크) 또는 hybrid(dense와 BM25를 RRF로 합침).
+  # hybrid는 색인에 BM25 sparse 벡터가 있어야 한다(#52 이후에 만든 색인)
+  retrieval: hybrid
+  reranker: none     # 리랭커. none(그대로 통과)만 구현
+  top_k: 5           # 검색 결과 중 쓸 청크 수
+
+llm:
+  model: Qwen/Qwen3-8B                 # vLLM에 띄운 모델 이름. thinking 모드는 요청마다 끈다
+  base_url: http://localhost:8000/v1   # vLLM 서버 (OpenAI 호환 API)
+  # 답변 길이 상한(토큰). 없으면 같은 말을 되풀이하는 답변이 모델 한도까지 이어져 요청 시간 제한을 넘긴다
+  max_tokens: 1024
+
+gen_eval:
+  # 생성 LLM: RAGAS로 평가셋 질문을 만들 때 쓰는 LLM. 빼면 답변 LLM(llm)의 모델·주소를 상한 없이 쓴다.
+  # 출력 길이 상한은 같은 말을 되풀이하는 출력이 문맥 끝까지 가지 않게 둔다. RAGAS의 요약·주제·질문은
+  # 수백 토큰이면 충분하고, 2048이면 되풀이에 빠져도 20초 안에 끊긴다. 요약에서 상한을 넘은 청크는 질문 재료에서 뺀다.
+  # 32B는 지어낸 질문이 8B보다 적어 출발점 평가셋을 이 모델로 만들었다(#15). 평소 vLLM은 8B라, gen-eval 전에
+  # vLLM을 Qwen/Qwen3-32B-AWQ로 바꿔 띄우고 끝나면 되돌린다(GPU 한 장에 둘을 함께 띄우지 않는다)
+  llm:
+    model: Qwen/Qwen3-32B-AWQ
+    base_url: http://localhost:8000/v1
+    max_tokens: 2048
+  seed: 42                      # 부서마다 생성에 쓸 문서를 고를 때 쓰는 시드
+  docs_per_department: 30       # 부서마다 질문을 만들 문서 수. RAGAS가 이 문서들로 지식 그래프를 만든다
+  questions_per_department: 40  # 부서마다 만들 질문 수
+  pii_chunks: 100               # PII 정답셋에 넣을 원문 청크 수. 청크는 seed로 고른다. 늘리면 gen-eval --pii-only로 새 청크만 더한다
+  query_distribution:           # 질문 유형 비율 (RAGAS query_distribution)
+    single_hop: 0.5
+    multi_hop_specific: 0.25
+    multi_hop_abstract: 0.25

@@ -24,6 +24,9 @@ RETRIEVALS = ["dense", "hybrid"]
 DEFAULT_RETRIEVAL = "dense"
 # 하이브리드 검색에서 dense·BM25 각각 가져올 후보 수는 상위 k의 이 배수다
 HYBRID_CANDIDATES = 4
+# RRF 점수는 순위 r(1부터)마다 1 ÷ (RRF_CONSTANT + r)을 더한다. #52의 Qdrant 기본값과 같은 값이다
+# (Qdrant는 0부터 센 순위에 k=2). 값을 바꾸면 결과가 바뀌므로 측정으로 정한다 (#59)
+RRF_CONSTANT = 1
 # 단계별 지연 시간의 단계: 질문 임베딩, 검색(리랭크 포함), 답변 생성, 전체
 LATENCY_STAGES = ["embed", "search", "generate", "total"]
 
@@ -99,7 +102,7 @@ def search(
     """질문과 가장 가까운 청크 상위 k개. ACL 필터가 켜져 있으면 검색 전에 허용 부서로 거른다.
 
     dense는 질문 벡터로 정확한 최근접 검색을 한다. hybrid는 dense와 BM25(질문의 단어 가중치로
-    sparse 벡터 검색)가 각각 후보를 가져오고 Qdrant가 RRF로 합친다. ACL 필터는 두 검색 모두에 건다.
+    sparse 벡터 검색)가 각각 후보를 가져오고 `rrf`로 합친다. ACL 필터는 두 검색 모두에 건다.
     """
     cfg = config["ask"]
     retrieval = retrieval_of(config)
@@ -118,24 +121,49 @@ def search(
                 limit=cfg["top_k"],
                 search_params=exact,
             ).points
-        else:
-            indices, values = embedding.bm25_query(question)
-            candidates = cfg["top_k"] * HYBRID_CANDIDATES
-            points = client.query_points(
-                config["index"]["collection"],
-                prefetch=[
-                    models.Prefetch(query=vector, filter=acl, limit=candidates, params=exact),
-                    models.Prefetch(
-                        query=models.SparseVector(indices=indices, values=values),
-                        using=SPARSE_VECTOR,
-                        filter=acl,
-                        limit=candidates,
-                    ),
-                ],
-                query=models.FusionQuery(fusion=models.Fusion.RRF),
-                limit=cfg["top_k"],
-            ).points
-    return [{**p.payload, "score": p.score} for p in points]
+            return [{**p.payload, "score": p.score} for p in points]
+        indices, values = embedding.bm25_query(question)
+        candidates = cfg["top_k"] * HYBRID_CANDIDATES
+        dense = client.query_points(
+            config["index"]["collection"],
+            query=vector,
+            query_filter=acl,
+            limit=candidates,
+            search_params=exact,
+        ).points
+        sparse = client.query_points(
+            config["index"]["collection"],
+            query=models.SparseVector(indices=indices, values=values),
+            using=SPARSE_VECTOR,
+            query_filter=acl,
+            limit=candidates,
+        ).points
+    return rrf(dense, sparse, cfg["top_k"])
+
+
+def rrf(dense: list[Any], sparse: list[Any], limit: int) -> list[dict[str, Any]]:
+    """dense 후보와 BM25 후보를 RRF로 합쳐 상위 `limit`개 청크(payload와 RRF 점수)를 돌려준다.
+
+    점수가 같으면 (1) 두 검색 중 더 좋은 순위, (2) dense 순위(dense에 없으면 가장 뒤), (3) 청크 ID
+    순으로 줄을 세운다. Qdrant의 RRF는 동점 순서를 정하지 않아 같은 질문에도 결과가 바뀌었다 (#59).
+    """
+    ranks: dict[Any, dict[str, int]] = {}
+    points = {}
+    for name, found in (("dense", dense), ("sparse", sparse)):
+        for rank, p in enumerate(found, 1):
+            ranks.setdefault(p.id, {})[name] = rank
+            points[p.id] = p
+    scores = {i: sum(1 / (RRF_CONSTANT + r) for r in rs.values()) for i, rs in ranks.items()}
+    order = sorted(
+        ranks,
+        key=lambda i: (
+            -scores[i],
+            min(ranks[i].values()),
+            ranks[i].get("dense", float("inf")),
+            i,
+        ),
+    )
+    return [{**points[i].payload, "score": scores[i]} for i in order[:limit]]
 
 
 def retrieval_of(config: dict[str, Any]) -> str:
