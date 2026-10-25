@@ -55,7 +55,10 @@ ask:
   # hybrid는 색인에 BM25 sparse 벡터가 있어야 한다(#52 이후에 만든 색인). hybrid는 검색 적중률을
   # 0.761에서 0.854로 올렸고, 거부 정확도는 0.699에서 0.603으로 내렸다 (#53)
   retrieval: hybrid
-  reranker: none     # 리랭커. none(그대로 통과)만 구현
+  # 리랭커: none(그대로 통과), Qwen/Qwen3-Reranker-0.6B, BAAI/bge-reranker-v2-m3. 켜면 검색 후보를
+  # 상위 k의 4배로 가져와 리랭커 점수(0~1) 순으로 상위 k개를 고르고, rerank_min_score(기본 0.5)
+  # 아래 청크는 뺀다 (#63)
+  reranker: none
   top_k: 5           # 검색 결과 중 쓸 청크 수
 
 llm:
