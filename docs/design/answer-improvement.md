@@ -60,7 +60,7 @@
 
 ### 3.1 결과 (#63, #64)
 
-같은 색인과 평가셋(48문항)으로 `hybrid` 검색에 리랭커를 붙여 쟀다. 권한 없는 실행에서 LLM이 답한 것은 독립 검수 에이전트 3명이 정당한 답 / 근거 없는 답으로 판정하고, 의견이 갈리거나 일부만 근거가 있는 답은 사람이 정했다(다른 직책·날짜의 내용을 묻는 대상의 내용처럼 말한 답은 근거 없는 답).
+같은 색인과 평가셋(48문항)으로 `hybrid` 검색에 리랭커를 붙여 쟀다. 권한 없는 실행에서 LLM이 답한 것은 독립 검수 에이전트 3명이 정당한 답 / 근거 없는 답으로 판정하고, 의견이 갈리거나 일부만 근거가 있는 답은 사람이 정했다(다른 직책·날짜의 내용을 묻는 대상의 내용처럼 말한 답은 근거 없는 답). #47에서 판정한 7번은 같은 기준으로 다시 판정해 모두 같은 결과였다.
 
 | 지표 | 리랭커 없음 (`hybrid-53c`) | Qwen3-Reranker (`rerank-qwen-64`) | bge-reranker (`rerank-bge-64`) |
 |---|---|---|---|
@@ -74,13 +74,21 @@
 | 검색 누출률 | 0.0 | 0.0 | 0.0 |
 
 - **Qwen3-Reranker**는 단어만 겹치는 청크에도 높은 점수를 줬다. 예: 규제 부서의 Brand Cling 질문에서 "Customer facing Cling" 청크에 0.974. 근거 없는 답이 15번에서 22번으로 늘고 검색 적중률도 떨어졌다.
-- **bge-reranker**는 근거 없는 답을 15번에서 6번으로 줄였다. 대신 기준 점수 0.5가 맞는 정답 문서까지 빼, `hybrid`만으로는 정답을 찾던 권한 있는 실행 7번이 찾지 못함으로 바뀌었다. 그 정답 문서들의 점수는 0.09~0.47이었고, 오타가 많은 질문("Whot is a communnication plen…")에서 특히 낮았다.
-- 두 리랭커 모두 검색 단계가 0.3~0.5초 늘었다(후보 20개마다 점수를 매김). bge는 찾지 못함 응답이 늘어 LLM을 덜 불러 전체 중앙값은 줄었다.
+- **bge-reranker**는 근거 없는 답을 15번에서 6번으로 줄였다. 대신 기준 점수 0.5가 맞는 정답 문서까지 빼, 권한 있는 실행 7번이 찾지 못함으로 바뀌었다(그중 6번은 `hybrid`만으로 정답 문서를 찾던 실행). 그 정답 문서들의 리랭커 점수는 0.09~0.47이었고, 오타가 많은 질문에서 특히 낮았다.
+
+  | 질문 | 부서 | 정답 문서 리랭커 점수 |
+  |---|---|---|
+  | What is a Brand Cling used for in the context of trade marketing? | marketing | 0.277 |
+  | Wha is The Cannabist in the context of marketing outlees? | marketing | 0.111 (`hybrid`도 못 찾음) |
+  | Whot is a communnication plen and why is it imortant in consumer insights researh? | marketing, product | 0.033~0.086 |
+  | What key activities were scheduled for March 2019 in the Cay…? | marketing, product | 0.239~0.393 |
+  | What is the significance of 'Royal Creme' in the context of the Indonesia launch project? | product | 0.465 |
+- 검색 단계가 Qwen3-Reranker는 약 0.3초, bge-reranker는 약 0.5초 늘었다(후보 20개마다 점수를 매김). bge는 찾지 못함 응답이 늘어 LLM을 덜 불러 전체 중앙값은 줄었다.
 - GPU 메모리는 리랭커를 띄운 뒤 30,191MiB(vLLM 포함)였다.
 
 **결정: 리랭커를 켜지 않는다(사람이 결정).** 세 방식 중 리랭커 없음이 지금 가장 적합하다.
 - 검색 적중률이 가장 높고, 권한 있는 사용자가 맞는 답을 잃는 경우가 없으며, 검색이 가장 빠르다.
-- Qwen3-Reranker는 모든 지표에서 리랭커 없음보다 나쁘다.
+- Qwen3-Reranker는 모든 지표에서 리랭커 없음과 같거나 나쁘다.
 - bge-reranker는 근거 없는 답을 크게 줄이지만, 그 대가로 권한 있는 사용자가 맞는 답을 받지 못하는 경우(7번)와 검색 적중률 0.07 하락, 검색 0.5초 증가가 생긴다. 근거 없는 답을 줄이려다 맞는 답을 잃는 것은 지금 기준 점수에서는 득보다 실이 크다.
 - bge가 근거 없는 답을 줄이는 효과는 뚜렷해 다음 단계 후보로 남긴다(기준 점수를 bge의 점수 분포에 맞게 다시 보기, 리랭커 점수를 청크를 빼는 데가 아니라 답할지 말지 판단하는 데만 쓰기).
 
