@@ -89,7 +89,11 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
                     for i in q["doc_ids"]
                 ],
                 "retrieved": [
-                    {"doc_id": c["doc_id"], "departments": c["departments"]}
+                    {
+                        "doc_id": c["doc_id"],
+                        "departments": c["departments"],
+                        **({"rerank_score": c["rerank_score"]} if "rerank_score" in c else {}),
+                    }
                     for c in result["retrieved"]
                 ],
                 "answer": result["answer"],

@@ -1,5 +1,5 @@
-"""임베딩 모델: 청킹에 쓸 토큰 위치와 임베딩을 준다. 하이브리드 검색에 쓸 BM25 단어 가중치도 준다.
-모두 앱 프로세스 안에서 실행한다."""
+"""임베딩 모델: 청킹에 쓸 토큰 위치와 임베딩을 준다. 하이브리드 검색에 쓸 BM25 단어 가중치와
+리랭커도 준다. 모두 앱 프로세스 안에서 실행한다."""
 
 from functools import cache
 from typing import Any, Protocol
@@ -91,3 +91,13 @@ def bm25_query(text: str) -> tuple[list[int], list[float]]:
     """질문의 BM25 sparse 벡터(단어 번호, 가중치)."""
     e = next(iter(load_bm25().query_embed(text)))
     return e.indices.tolist(), e.values.tolist()
+
+
+@cache
+def load_reranker(model: str) -> Any:
+    """리랭커 모델을 불러온다. 점수는 시그모이드로 0~1 확률로 맞춘다(모델마다 로짓 / 확률로 달라서).
+    같은 모델은 한 번만 불러온다. 테스트는 이 함수를 가짜 리랭커로 바꾼다."""
+    import torch  # 무거워서 쓸 때만 불러온다
+    from sentence_transformers import CrossEncoder
+
+    return CrossEncoder(model, activation_fn=torch.nn.Sigmoid())

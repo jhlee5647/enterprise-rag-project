@@ -101,3 +101,19 @@ class FakeVLLM:
                 pass
 
         return Handler
+
+
+class FakeReranker:
+    """테스트용 가짜 리랭커. 청크 본문에 든 글자열로 0~1 점수를 정한다(없으면 `default`).
+
+    예: FakeReranker({"group": 0.9}) → 본문에 "group"이 든 청크는 0.9, 나머지는 0.0.
+    """
+
+    def __init__(self, scores, default=0.0):
+        self.scores, self.default = scores, default
+
+    def predict(self, pairs):
+        return [
+            next((s for key, s in self.scores.items() if key in text), self.default)
+            for _, text in pairs
+        ]
