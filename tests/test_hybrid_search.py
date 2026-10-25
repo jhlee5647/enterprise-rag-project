@@ -27,6 +27,31 @@ def retrieved_ids(record):
     return [c["doc_id"] for c in record["retrieved"]]
 
 
+def stored_points(pipeline):
+    config = pipeline.config
+    with open_index(config["paths"]["index"]) as client:
+        points, _ = client.scroll(config["index"]["collection"], limit=10_000, with_vectors=True)
+    return points
+
+
+def make_dense_only_collection(pipeline):
+    """#52 이전 형식(dense 벡터만) 컬렉션으로 바꾼다. 청크와 dense 벡터는 그대로 둔다."""
+    points = stored_points(pipeline)
+    collection = pipeline.config["index"]["collection"]
+    with open_index(pipeline.config["paths"]["index"]) as client:
+        client.delete_collection(collection)
+        client.create_collection(
+            collection,
+            vectors_config=models.VectorParams(
+                size=len(points[0].vector[""]), distance=models.Distance.COSINE
+            ),
+        )
+        client.upsert(
+            collection,
+            [models.PointStruct(id=p.id, vector=p.vector[""], payload=p.payload) for p in points],
+        )
+
+
 @pytest.fixture
 def hybrid_pipeline(make_pipeline):
     return make_pipeline(HYBRID_CELLS)
@@ -56,11 +81,30 @@ def test_t03_hybrid_applies_acl_filter_to_both_searches(hybrid_pipeline):
     assert run.metrics["retrieval_leak_rate"] == 0.0
 
 
-def test_t04_default_retrieval_is_dense(hybrid_pipeline):
+def test_t04_config_without_retrieval_uses_dense(hybrid_pipeline):
+    del hybrid_pipeline.config["ask"]["retrieval"]
     run = hybrid_pipeline.eval(ROWS, "t04", top_k=1)
 
-    assert hybrid_pipeline.config["ask"]["retrieval"] == "dense"
-    assert run.record(QUESTION, "marketing")["hit_rate"] == 0.0
+    record = run.record(QUESTION, "marketing")
+    assert R not in retrieved_ids(record)
+    assert record["hit_rate"] == 0.0
+
+
+def without_latency(run):
+    metrics = {k: v for k, v in run.metrics.items() if k != "latency_ms"}
+    records = [{k: v for k, v in r.items() if k != "latency_ms"} for r in run.records]
+    return metrics, records
+
+
+def test_t05_dense_results_are_the_same_on_old_and_new_index_format(hybrid_pipeline):
+    # 같은 청크·dense 벡터로, sparse 벡터가 있는 새 형식과 dense 벡터만 있는 이전 형식을 비교한다
+    team = row("What does the team have in the plan?", "hybb0001", "marketing", "단일 홉", "O")
+    rows = [*ROWS, team]
+    new = hybrid_pipeline.eval(rows, "t05-new", top_k=2, retrieval="dense")
+    make_dense_only_collection(hybrid_pipeline)
+    old = hybrid_pipeline.eval(rows, "t05-old", top_k=2, retrieval="dense")
+
+    assert without_latency(new) == without_latency(old)
 
 
 def test_t06_unknown_retrieval_stops_before_running(hybrid_pipeline, capsys):
@@ -71,25 +115,15 @@ def test_t06_unknown_retrieval_stops_before_running(hybrid_pipeline, capsys):
     assert code == 2
     err = capsys.readouterr().err
     assert "bm25only" in err and "dense" in err and "hybrid" in err
+    # ask도 질문 전에 멈춘다(eval이 config에 bm25only를 써 두었다)
+    asked = hybrid_pipeline("marketing", QUESTION)
+    assert asked.code == 2
+    assert "bm25only" in asked.err
     assert hybrid_pipeline.vllm.requests == []
 
 
 def test_t07_hybrid_on_index_without_sparse_vectors_asks_to_reindex(hybrid_pipeline, capsys):
-    # #52 이전 형식(dense 벡터만) 컬렉션을 만든다
-    config = hybrid_pipeline.config
-    with open_index(config["paths"]["index"]) as client:
-        points, _ = client.scroll(config["index"]["collection"], limit=10_000, with_vectors=True)
-        client.delete_collection(config["index"]["collection"])
-        client.create_collection(
-            config["index"]["collection"],
-            vectors_config=models.VectorParams(
-                size=len(points[0].vector[""]), distance=models.Distance.COSINE
-            ),
-        )
-        client.upsert(
-            config["index"]["collection"],
-            [models.PointStruct(id=p.id, vector=p.vector[""], payload=p.payload) for p in points],
-        )
+    make_dense_only_collection(hybrid_pipeline)
     capsys.readouterr()
 
     code = hybrid_pipeline.eval(ROWS, "t07", retrieval="hybrid", expect_code=2)
@@ -98,14 +132,12 @@ def test_t07_hybrid_on_index_without_sparse_vectors_asks_to_reindex(hybrid_pipel
     assert "index를 다시 실행" in capsys.readouterr().err
     # ask도 같다. dense로 바꾸면 이전 형식 색인으로 그대로 동작한다
     assert hybrid_pipeline("marketing", QUESTION).code == 2
-    config["ask"]["retrieval"] = "dense"
+    hybrid_pipeline.config["ask"]["retrieval"] = "dense"
     assert hybrid_pipeline("marketing", QUESTION).code == 0
 
 
 def test_t08_every_chunk_has_a_sparse_vector(hybrid_pipeline):
-    config = hybrid_pipeline.config
-    with open_index(config["paths"]["index"]) as client:
-        points, _ = client.scroll(config["index"]["collection"], limit=10_000, with_vectors=True)
+    points = stored_points(hybrid_pipeline)
 
     assert points
     assert all(p.vector["bm25"].indices for p in points)

@@ -20,6 +20,8 @@ NOT_FOUND = "No relevant documents were found."
 IDL_URL = "https://www.industrydocuments.ucsf.edu/docs/"
 # 검색 방식: dense(질문 임베딩과 가까운 청크), hybrid(dense와 BM25를 RRF로 합침, #52)
 RETRIEVALS = ["dense", "hybrid"]
+# config에 검색 방식이 없을 때 쓰는 값
+DEFAULT_RETRIEVAL = "dense"
 # 하이브리드 검색에서 dense·BM25 각각 가져올 후보 수는 상위 k의 이 배수다
 HYBRID_CANDIDATES = 4
 # 단계별 지연 시간의 단계: 질문 임베딩, 검색(리랭크 포함), 답변 생성, 전체
@@ -82,7 +84,7 @@ def load_models(config: dict[str, Any]) -> None:
     hybrid이면 BM25 단어 가중치 모델도 한 번 써 둔다.
     """
     embed_question(config, "warm-up")
-    if config["ask"]["retrieval"] == "hybrid":
+    if retrieval_of(config) == "hybrid":
         embedding.bm25_query("warm-up")
 
 
@@ -100,14 +102,15 @@ def search(
     sparse 벡터 검색)가 각각 후보를 가져오고 Qdrant가 RRF로 합친다. ACL 필터는 두 검색 모두에 건다.
     """
     cfg = config["ask"]
-    check_retrieval(cfg["retrieval"])
+    retrieval = retrieval_of(config)
+    check_retrieval(retrieval)
     acl = department_filter(department) if cfg["acl_filter"] else None
     # 근사 검색(HNSW)은 상위 5개가 정확한 검색과 자주 달라 비교를 흔들었고, 허용 부서
     # payload 색인으로도 고쳐지지 않았다. 그래서 정확한 최근접 검색을 한다
     # (`docs/design/retrieval-improvement.md` 4.1절)
     exact = models.SearchParams(exact=True)
     with open_index(config["paths"]["index"]) as client:
-        if cfg["retrieval"] == "dense":
+        if retrieval == "dense":
             points = client.query_points(
                 config["index"]["collection"],
                 query=vector,
@@ -135,6 +138,11 @@ def search(
     return [{**p.payload, "score": p.score} for p in points]
 
 
+def retrieval_of(config: dict[str, Any]) -> str:
+    """config의 검색 방식(`ask.retrieval`). 없으면 `DEFAULT_RETRIEVAL`."""
+    return config["ask"].get("retrieval", DEFAULT_RETRIEVAL)
+
+
 def check_retrieval(retrieval: str) -> None:
     """검색 방식이 `RETRIEVALS`에 없으면 AskError."""
     if retrieval not in RETRIEVALS:
@@ -146,7 +154,7 @@ def check_retrieval(retrieval: str) -> None:
 def check_index(config: dict[str, Any]) -> None:
     """질의응답 전에 검색 방식과 색인이 맞는지 확인한다. 모르는 검색 방식이거나, hybrid인데 색인에
     BM25 sparse 벡터가 없으면(#52 이전 형식) AskError."""
-    retrieval = config["ask"]["retrieval"]
+    retrieval = retrieval_of(config)
     check_retrieval(retrieval)
     if retrieval != "hybrid":
         return

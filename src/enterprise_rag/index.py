@@ -31,6 +31,8 @@ EMBED_BATCH = 8192
 UPSERT_BATCH = 1024
 # 마스킹 결과 파일의 메타데이터에 다시 쓰는 조건을 적는 키
 CONDITIONS_KEY = b"masking_conditions"
+# 청크의 dense 벡터 이름. Qdrant의 이름 없는 기본 벡터를 쓴다
+DENSE_VECTOR = ""
 # 청크의 BM25 sparse 벡터 이름. 검색 방식과 상관없이 저장해, 색인 하나로 dense·hybrid를
 # 비교한다 (#52)
 SPARSE_VECTOR = "bm25"
@@ -107,12 +109,14 @@ def index(config: dict[str, Any]) -> None:
                 models.PointStruct(
                     id=start + i,
                     vector={
-                        "": v,
-                        SPARSE_VECTOR: models.SparseVector(indices=s[0], values=s[1]),
+                        DENSE_VECTOR: v,
+                        SPARSE_VECTOR: models.SparseVector(indices=indices, values=values),
                     },
                     payload=p,
                 )
-                for i, (v, s, p) in enumerate(zip(vectors, sparse, batch, strict=True))
+                for i, (v, (indices, values), p) in enumerate(
+                    zip(vectors, sparse, batch, strict=True)
+                )
             ]
             for offset in range(0, len(points), UPSERT_BATCH):
                 client.upsert(collection, points[offset : offset + UPSERT_BATCH])
