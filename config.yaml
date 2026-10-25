@@ -51,9 +51,10 @@ embedding:
 
 ask:
   acl_filter: true   # 켜면 질문한 부서가 허용 부서에 없는 청크를 검색 전에 뺀다
-  # 검색 방식: dense(질문 임베딩과 가까운 청크) 또는 hybrid(dense와 BM25를 RRF로 합침).
-  # hybrid는 색인에 BM25 sparse 벡터가 있어야 한다(#52 이후에 만든 색인)
-  retrieval: dense
+  # 검색 방식: dense(질문 임베딩과 가까운 청크) 또는 hybrid(dense와 BM25를 RRF로 합침). 빼면 dense.
+  # hybrid는 색인에 BM25 sparse 벡터가 있어야 한다(#52 이후에 만든 색인). hybrid는 검색 적중률을
+  # 0.761에서 0.854로 올렸고, 거부 정확도는 0.699에서 0.603으로 내렸다 (#53)
+  retrieval: hybrid
   reranker: none     # 리랭커. none(그대로 통과)만 구현
   top_k: 5           # 검색 결과 중 쓸 청크 수
 
