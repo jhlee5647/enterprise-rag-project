@@ -28,6 +28,15 @@ HYBRID_CANDIDATES = 4
 # RRF 점수는 순위 r(1부터)마다 1 ÷ (RRF_CONSTANT + r)을 더한다. #52의 Qdrant 기본값과 같은 값이다
 # (Qdrant는 0부터 센 순위에 k=2). 값을 바꾸면 결과가 바뀌므로 측정으로 정한다 (#59)
 RRF_CONSTANT = 1
+# 리랭커: none(그대로 통과) 또는 로컬 리랭커 모델 이름
+# (#63, `docs/design/answer-improvement.md` 3절)
+RERANKERS = ["none", "Qwen/Qwen3-Reranker-0.6B", "BAAI/bge-reranker-v2-m3"]
+# config에 리랭커가 없을 때 쓰는 값
+DEFAULT_RERANKER = "none"
+# 리랭커를 켜면 검색이 상위 k의 이 배수를 후보로 가져오고, 리랭커가 그중 상위 k개를 고른다
+RERANK_CANDIDATES = 4
+# 리랭커 점수(0~1 확률)가 이보다 낮은 청크는 근거에서 뺀다. 측정으로 고르지 않은 일반적인 기준
+DEFAULT_RERANK_MIN_SCORE = 0.5
 # 단계별 지연 시간의 단계: 질문 임베딩, 검색(리랭크 포함), 답변 생성, 전체
 LATENCY_STAGES = ["embed", "search", "generate", "total"]
 
@@ -44,11 +53,10 @@ def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any
     (`latency_ms`: 질문 임베딩 `embed`, 검색과 리랭크 `search`, 답변 생성 `generate`, 전체 `total`,
     밀리초 정수)을 돌려준다. LLM을 부르지 않으면 답변 생성 시간은 0이다.
     """
-    cfg = config["ask"]
     started = time.perf_counter()
     vector = embed_question(config, question)
     embedded = time.perf_counter()
-    chunks = rerank(cfg["reranker"], search(config, department, question, vector))
+    chunks = rerank(config, question, search(config, department, question, vector))
     searched = time.perf_counter()
     retrieved = [
         {
@@ -57,6 +65,7 @@ def ask(config: dict[str, Any], department: str, question: str) -> dict[str, Any
             "chunk": c["chunk"],
             "departments": c["departments"],
             "score": c["score"],
+            **({"rerank_score": c["rerank_score"]} if "rerank_score" in c else {}),
         }
         for c in chunks
     ]
@@ -85,11 +94,13 @@ def load_models(config: dict[str, Any]) -> None:
     `eval`이 첫 실행 전에 부른다. LLM 서버는 따로 떠 있으므로 준비하지 않는다.
 
     GPU 모델은 첫 임베딩에서 준비 작업을 해 1초 넘게 걸리므로, 짧은 질문을 한 번 임베딩해 둔다.
-    hybrid이면 BM25 단어 가중치 모델도 한 번 써 둔다.
+    hybrid이면 BM25 단어 가중치 모델도, 리랭커를 켰으면 리랭커도 한 번 써 둔다.
     """
     embed_question(config, "warm-up")
     if retrieval_of(config) == "hybrid":
         embedding.bm25_query("warm-up")
+    if reranking_on(config):
+        embedding.load_reranker(reranker_of(config)).predict([("warm-up", "warm-up")])
 
 
 def embed_question(config: dict[str, Any], question: str) -> list[float]:
@@ -100,7 +111,8 @@ def embed_question(config: dict[str, Any], question: str) -> list[float]:
 def search(
     config: dict[str, Any], department: str, question: str, vector: list[float]
 ) -> list[dict[str, Any]]:
-    """질문과 가장 가까운 청크 상위 k개. ACL 필터가 켜져 있으면 검색 전에 허용 부서로 거른다.
+    """질문과 가장 가까운 청크 상위 k개. 리랭커를 켜면 리랭커가 고를 후보로 상위 k의
+    `RERANK_CANDIDATES`배를 돌려준다. ACL 필터가 켜져 있으면 검색 전에 허용 부서로 거른다.
 
     dense는 질문 벡터로 정확한 최근접 검색을 한다. hybrid는 dense와 BM25(질문의 단어 가중치로
     sparse 벡터 검색)가 각각 후보를 가져오고 `rrf`로 합친다. ACL 필터는 두 검색 모두에 건다.
@@ -108,6 +120,7 @@ def search(
     cfg = config["ask"]
     retrieval = retrieval_of(config)
     check_retrieval(retrieval)
+    limit = cfg["top_k"] * (RERANK_CANDIDATES if reranking_on(config) else 1)
     acl = department_filter(department) if cfg["acl_filter"] else None
     # 근사 검색(HNSW)은 상위 5개가 정확한 검색과 자주 달라 비교를 흔들었고, 허용 부서
     # payload 색인으로도 고쳐지지 않았다. 그래서 정확한 최근접 검색을 한다
@@ -122,7 +135,7 @@ def search(
             ).points
 
         if retrieval == "dense":
-            return [chunk(p.payload, p.score) for p in dense_search(cfg["top_k"])]
+            return [chunk(p.payload, p.score) for p in dense_search(limit)]
         indices, values = embedding.bm25_query(question)
         candidates = cfg["top_k"] * HYBRID_CANDIDATES
         dense = dense_search(candidates)
@@ -133,7 +146,7 @@ def search(
             query_filter=acl,
             limit=candidates,
         ).points
-    return rrf(dense, bm25, cfg["top_k"])
+    return rrf(dense, bm25, limit)
 
 
 def chunk(payload: dict[str, Any], score: float) -> dict[str, Any]:
@@ -181,10 +194,11 @@ def check_retrieval(retrieval: str) -> None:
 
 
 def check_index(config: dict[str, Any]) -> None:
-    """질의응답 전에 검색 방식과 색인이 맞는지 확인한다. 모르는 검색 방식이거나, hybrid인데 색인에
-    BM25 sparse 벡터가 없으면(#52 이전 형식) AskError."""
+    """질의응답 전에 검색 방식·리랭커와 색인이 맞는지 확인한다. 모르는 검색 방식이나 리랭커이거나,
+    hybrid인데 색인에 BM25 sparse 벡터가 없으면(#52 이전 형식) AskError."""
     retrieval = retrieval_of(config)
     check_retrieval(retrieval)
+    check_reranker(reranker_of(config))
     if retrieval != "hybrid":
         return
     collection = config["index"]["collection"]
@@ -197,11 +211,43 @@ def check_index(config: dict[str, Any]) -> None:
         )
 
 
-def rerank(reranker: str, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """리랭커 자리. `none`은 순서를 바꾸지 않고 그대로 통과시킨다."""
-    if reranker != "none":
-        raise ValueError(f"지원하지 않는 리랭커: {reranker} (구현된 것: none)")
-    return chunks
+def reranker_of(config: dict[str, Any]) -> str:
+    """config의 리랭커(`ask.reranker`). 없으면 `none`."""
+    return config["ask"].get("reranker", DEFAULT_RERANKER)
+
+
+def reranking_on(config: dict[str, Any]) -> bool:
+    """리랭커를 켰는지."""
+    return reranker_of(config) != "none"
+
+
+def check_reranker(reranker: str) -> None:
+    """리랭커가 `RERANKERS`에 없으면 AskError."""
+    if reranker not in RERANKERS:
+        raise AskError(
+            f"ask.reranker(리랭커)는 {', '.join(RERANKERS)} 중 하나여야 한다: {reranker}"
+        )
+
+
+def rerank(
+    config: dict[str, Any], question: str, chunks: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """검색 후보를 리랭커 점수(0~1)로 다시 매겨 상위 k개를 고른다.
+
+    기준 점수(`ask.rerank_min_score`, 없으면 0.5)보다 낮은 청크는 뺀다. 점수가 같으면 원래 검색
+    순위를 따른다. `none`은 그대로 통과한다.
+    """
+    reranker = reranker_of(config)
+    check_reranker(reranker)
+    if reranker == "none" or not chunks:
+        return chunks
+    scores = embedding.load_reranker(reranker).predict([(question, c["text"]) for c in chunks])
+    min_score = config["ask"].get("rerank_min_score", DEFAULT_RERANK_MIN_SCORE)
+    ranked = sorted(
+        ({**c, "rerank_score": float(s)} for c, s in zip(chunks, scores, strict=True)),
+        key=lambda c: -c["rerank_score"],
+    )  # sorted는 안정 정렬이라 점수가 같으면 검색 순위가 유지된다
+    return [c for c in ranked if c["rerank_score"] >= min_score][: config["ask"]["top_k"]]
 
 
 def generate(llm: dict[str, Any], question: str, chunks: list[dict[str, Any]]) -> str:
