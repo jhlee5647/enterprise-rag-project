@@ -146,3 +146,13 @@ def test_t10_reranker_loading_is_not_counted_as_search_latency(rerank_pipeline, 
     run = rerank_pipeline.eval(ROWS, "t10", top_k=2)
 
     assert all(r["latency_ms"]["search"] < 1000 for r in run.records)
+
+
+def test_extra_reranker_works_with_hybrid_retrieval(rerank_pipeline):
+    # hybrid 후보(RRF 합친 상위 4개)에서도 리랭커가 고른다. BM25 1위인 rrfy0001(zorvex)을 올린다
+    rerank_pipeline.use_reranker({"zorvex": 0.9}, default=0.2)
+    run = rerank_pipeline.eval(ROWS, "extra", top_k=1, retrieval="hybrid")
+
+    record = run.record(QUESTION, "marketing")
+    assert retrieved_ids(record) == ["rrfy0001"]
+    assert record["hit_rate"] == 1.0

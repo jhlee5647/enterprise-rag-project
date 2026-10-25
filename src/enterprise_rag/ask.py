@@ -31,6 +31,8 @@ RRF_CONSTANT = 1
 # 리랭커: none(그대로 통과) 또는 로컬 리랭커 모델 이름
 # (#63, `docs/design/answer-improvement.md` 3절)
 RERANKERS = ["none", "Qwen/Qwen3-Reranker-0.6B", "BAAI/bge-reranker-v2-m3"]
+# config에 리랭커가 없을 때 쓰는 값
+DEFAULT_RERANKER = "none"
 # 리랭커를 켜면 검색이 상위 k의 이 배수를 후보로 가져오고, 리랭커가 그중 상위 k개를 고른다
 RERANK_CANDIDATES = 4
 # 리랭커 점수(0~1 확률)가 이보다 낮은 청크는 근거에서 뺀다. 측정으로 고르지 않은 일반적인 기준
@@ -97,7 +99,7 @@ def load_models(config: dict[str, Any]) -> None:
     embed_question(config, "warm-up")
     if retrieval_of(config) == "hybrid":
         embedding.bm25_query("warm-up")
-    if reranker_of(config) != "none":
+    if reranking_on(config):
         embedding.load_reranker(reranker_of(config)).predict([("warm-up", "warm-up")])
 
 
@@ -109,8 +111,8 @@ def embed_question(config: dict[str, Any], question: str) -> list[float]:
 def search(
     config: dict[str, Any], department: str, question: str, vector: list[float]
 ) -> list[dict[str, Any]]:
-    """질문과 가장 가까운 청크 상위 k개(리랭커를 켜면 리랭커가 고를 후보로 상위 k의 4배). ACL
-    필터가 켜져 있으면 검색 전에 허용 부서로 거른다.
+    """질문과 가장 가까운 청크 상위 k개. 리랭커를 켜면 리랭커가 고를 후보로 상위 k의
+    `RERANK_CANDIDATES`배를 돌려준다. ACL 필터가 켜져 있으면 검색 전에 허용 부서로 거른다.
 
     dense는 질문 벡터로 정확한 최근접 검색을 한다. hybrid는 dense와 BM25(질문의 단어 가중치로
     sparse 벡터 검색)가 각각 후보를 가져오고 `rrf`로 합친다. ACL 필터는 두 검색 모두에 건다.
@@ -118,7 +120,7 @@ def search(
     cfg = config["ask"]
     retrieval = retrieval_of(config)
     check_retrieval(retrieval)
-    limit = cfg["top_k"] * (RERANK_CANDIDATES if reranker_of(config) != "none" else 1)
+    limit = cfg["top_k"] * (RERANK_CANDIDATES if reranking_on(config) else 1)
     acl = department_filter(department) if cfg["acl_filter"] else None
     # 근사 검색(HNSW)은 상위 5개가 정확한 검색과 자주 달라 비교를 흔들었고, 허용 부서
     # payload 색인으로도 고쳐지지 않았다. 그래서 정확한 최근접 검색을 한다
@@ -211,7 +213,12 @@ def check_index(config: dict[str, Any]) -> None:
 
 def reranker_of(config: dict[str, Any]) -> str:
     """config의 리랭커(`ask.reranker`). 없으면 `none`."""
-    return config["ask"].get("reranker", "none")
+    return config["ask"].get("reranker", DEFAULT_RERANKER)
+
+
+def reranking_on(config: dict[str, Any]) -> bool:
+    """리랭커를 켰는지."""
+    return reranker_of(config) != "none"
 
 
 def check_reranker(reranker: str) -> None:
