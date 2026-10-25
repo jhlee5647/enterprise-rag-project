@@ -2,6 +2,7 @@
 
 import re
 import time
+from fractions import Fraction
 from typing import Any
 
 import httpx
@@ -112,48 +113,48 @@ def search(
     # payload 색인으로도 고쳐지지 않았다. 그래서 정확한 최근접 검색을 한다
     # (`docs/design/retrieval-improvement.md` 4.1절)
     exact = models.SearchParams(exact=True)
+    collection = config["index"]["collection"]
     with open_index(config["paths"]["index"]) as client:
-        if retrieval == "dense":
-            points = client.query_points(
-                config["index"]["collection"],
-                query=vector,
-                query_filter=acl,
-                limit=cfg["top_k"],
-                search_params=exact,
+
+        def dense_search(limit: int) -> list[Any]:
+            return client.query_points(
+                collection, query=vector, query_filter=acl, limit=limit, search_params=exact
             ).points
-            return [{**p.payload, "score": p.score} for p in points]
+
+        if retrieval == "dense":
+            return [chunk(p.payload, p.score) for p in dense_search(cfg["top_k"])]
         indices, values = embedding.bm25_query(question)
         candidates = cfg["top_k"] * HYBRID_CANDIDATES
-        dense = client.query_points(
-            config["index"]["collection"],
-            query=vector,
-            query_filter=acl,
-            limit=candidates,
-            search_params=exact,
-        ).points
-        sparse = client.query_points(
-            config["index"]["collection"],
+        dense = dense_search(candidates)
+        bm25 = client.query_points(
+            collection,
             query=models.SparseVector(indices=indices, values=values),
             using=SPARSE_VECTOR,
             query_filter=acl,
             limit=candidates,
         ).points
-    return rrf(dense, sparse, cfg["top_k"])
+    return rrf(dense, bm25, cfg["top_k"])
 
 
-def rrf(dense: list[Any], sparse: list[Any], limit: int) -> list[dict[str, Any]]:
+def chunk(payload: dict[str, Any], score: float) -> dict[str, Any]:
+    """검색된 청크 하나: 색인의 payload에 검색 점수를 붙인다."""
+    return {**payload, "score": score}
+
+
+def rrf(dense: list[Any], bm25: list[Any], limit: int) -> list[dict[str, Any]]:
     """dense 후보와 BM25 후보를 RRF로 합쳐 상위 `limit`개 청크(payload와 RRF 점수)를 돌려준다.
 
     점수가 같으면 (1) 두 검색 중 더 좋은 순위, (2) dense 순위(dense에 없으면 가장 뒤), (3) 청크 ID
     순으로 줄을 세운다. Qdrant의 RRF는 동점 순서를 정하지 않아 같은 질문에도 결과가 바뀌었다 (#59).
     """
     ranks: dict[Any, dict[str, int]] = {}
-    points = {}
-    for name, found in (("dense", dense), ("sparse", sparse)):
+    points: dict[Any, Any] = {}
+    for name, found in (("dense", dense), ("bm25", bm25)):
         for rank, p in enumerate(found, 1):
             ranks.setdefault(p.id, {})[name] = rank
             points[p.id] = p
-    scores = {i: sum(1 / (RRF_CONSTANT + r) for r in rs.values()) for i, rs in ranks.items()}
+    # 분수로 더해 1/2 + 1/5와 1/3 + 1/3처럼 값이 같은 점수가 부동소수 오차로 갈리지 않게 한다
+    scores = {i: sum(Fraction(1, RRF_CONSTANT + r) for r in rs.values()) for i, rs in ranks.items()}
     order = sorted(
         ranks,
         key=lambda i: (
@@ -163,7 +164,7 @@ def rrf(dense: list[Any], sparse: list[Any], limit: int) -> list[dict[str, Any]]
             i,
         ),
     )
-    return [{**points[i].payload, "score": scores[i]} for i in order[:limit]]
+    return [chunk(points[i].payload, float(scores[i])) for i in order[:limit]]
 
 
 def retrieval_of(config: dict[str, Any]) -> str:

@@ -40,3 +40,4 @@
 | rrfb0001~rrfb0004 | document | `Marketing` | .ocr | RRF 동점 사례: 질문과 기능어만 겹쳐 가짜 dense에서 상위, BM25 점수 없음 (#59) |
 | rrfy0001 | document | `Marketing` | .ocr | RRF 동점 사례: 드문 단어 `zorvex`가 들어 BM25 1위, dense 후보 밖 (#59) |
 | rrfa0001 | document | `Marketing` | .ocr | RRF 사례: 드문 단어 `Plumbic`이 들어 dense·BM25 모두 1위 (#59) |
+| rrfc0001 | document | `Government & Public Affairs` | .ocr | RRF 사례: `zorvex`가 든 regulatory 전용 문서, ACL 사례 (#59) |

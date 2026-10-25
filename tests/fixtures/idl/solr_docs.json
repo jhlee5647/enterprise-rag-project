@@ -1788,5 +1788,34 @@
     "bates": "JLI00000986",
     "dateaddeducsf": "2024 June 27",
     "topic": "Marketing"
+  },
+  {
+    "id": "rrfc0001",
+    "collection": [
+      "JUUL Labs Collection"
+    ],
+    "collectioncode": [
+      "juul"
+    ],
+    "availability": [
+      "public",
+      "no restrictions"
+    ],
+    "originalformat": "document",
+    "case": [
+      "State of North Carolina, ex rel. Joshua H. Stein, Attorney General,  v. JUUL Labs, Inc"
+    ],
+    "title": "Zorvex filing",
+    "documentdate": "2018 September 04",
+    "type": [
+      "document"
+    ],
+    "pages": 2,
+    "brand": [
+      "Juul"
+    ],
+    "bates": "JLI00000987",
+    "dateaddeducsf": "2024 June 27",
+    "topic": "Government & Public Affairs"
   }
 ]
