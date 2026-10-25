@@ -31,6 +31,9 @@ EMBED_BATCH = 8192
 UPSERT_BATCH = 1024
 # 마스킹 결과 파일의 메타데이터에 다시 쓰는 조건을 적는 키
 CONDITIONS_KEY = b"masking_conditions"
+# 청크의 BM25 sparse 벡터 이름. 검색 방식과 상관없이 저장해, 색인 하나로 dense·hybrid를
+# 비교한다 (#52)
+SPARSE_VECTOR = "bm25"
 # 청크의 허용 부서를 담는 payload 필드. ACL 필터와 payload 색인이 함께 쓴다
 DEPARTMENTS_FIELD = "departments"
 # 작업 프로세스에 한 번에 넘기는 문서 수. 문서 길이가 고르지 않아 작게 나눈다
@@ -89,15 +92,27 @@ def index(config: dict[str, Any]) -> None:
         client.create_collection(
             collection,
             vectors_config=models.VectorParams(size=embedder.dim, distance=models.Distance.COSINE),
+            sparse_vectors_config={
+                SPARSE_VECTOR: models.SparseVectorParams(modifier=models.Modifier.IDF)
+            },
         )
         if is_url(config["paths"]["index"]):  # 로컬 모드는 payload 색인을 쓰지 않는다
             add_payload_index(client, collection)
         for start in range(0, len(payloads), EMBED_BATCH):
             batch = payloads[start : start + EMBED_BATCH]
-            vectors = embedder.embed_documents([p["text"] for p in batch])
+            texts = [p["text"] for p in batch]
+            vectors = embedder.embed_documents(texts)
+            sparse = embedding.bm25_documents(texts)
             points = [
-                models.PointStruct(id=start + i, vector=v, payload=p)
-                for i, (v, p) in enumerate(zip(vectors, batch, strict=True))
+                models.PointStruct(
+                    id=start + i,
+                    vector={
+                        "": v,
+                        SPARSE_VECTOR: models.SparseVector(indices=s[0], values=s[1]),
+                    },
+                    payload=p,
+                )
+                for i, (v, s, p) in enumerate(zip(vectors, sparse, batch, strict=True))
             ]
             for offset in range(0, len(points), UPSERT_BATCH):
                 client.upsert(collection, points[offset : offset + UPSERT_BATCH])

@@ -17,7 +17,7 @@ from typing import Any
 import pyarrow.parquet as pq
 
 from enterprise_rag import mask, metrics
-from enterprise_rag.ask import ask, load_models
+from enterprise_rag.ask import ask, check_index, load_models
 from enterprise_rag.departments import departments
 
 log = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ def evaluate(config: dict[str, Any], config_path: Path, run_name: str) -> Path:
     allowed = {d["doc_id"]: d["departments"] for d in documents}
     copies = copies_of(documents)
     check_eval_set(questions, set(allowed))
+    check_index(config)
     load_models(config)
     records = []
     for q in questions:

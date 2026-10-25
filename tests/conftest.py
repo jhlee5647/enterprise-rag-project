@@ -189,14 +189,17 @@ class Pipeline:
         expect_code=0,
         pii_answers=None,
         columns=EVAL_SET_COLUMNS,
+        retrieval=None,
     ):
         """평가셋 CSV(와 `pii_answers`가 있으면 PII 정답셋 CSV)를 쓰고 `eval --run-name`을
         실행해 실행 결과 폴더를 돌려준다.
 
         `expect_code`가 0이 아니면 그 종료 코드로 끝나는지 확인하고 종료 코드를 돌려준다.
-        `columns`는 평가셋 CSV의 열이다(예: 다른 판본 열이 없던 이전 평가셋).
+        `columns`는 평가셋 CSV의 열이다(예: 다른 판본 열이 없던 이전 평가셋). `retrieval`을 주면
+        검색 방식(`ask.retrieval`)을 바꾼다.
         """
-        self._write_config(acl_filter=acl_filter, top_k=top_k)
+        ask = {"retrieval": retrieval} if retrieval else {}
+        self._write_config(acl_filter=acl_filter, top_k=top_k, **ask)
         with open(self.config["paths"]["eval_set"], "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
